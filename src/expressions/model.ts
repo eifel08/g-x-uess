@@ -1,9 +1,13 @@
 /** One row in the expression list, as the UI sees it. */
+import type { SliderBounds } from './slider';
+
 export interface ExpressionItem {
   id: string;
   text: string;
   color: string;
   visible: boolean;
+  /** Range of this row's slider, once the player has changed it (`a = 3` rows). */
+  slider?: SliderBounds;
 }
 
 export const PALETTE = [

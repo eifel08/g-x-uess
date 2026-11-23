@@ -126,3 +126,51 @@ describe('game mode in the app', () => {
     expect(formula()).toBe('f(x) = ?');
   });
 });
+
+describe('variable sliders', () => {
+  it('shows a slider for name = number rows and updates the row when dragged', () => {
+    render(<App />);
+    type('a = 2');
+    const slider = screen.getByRole('slider', { name: 'a' }) as HTMLInputElement;
+    expect(slider.value).toBe('2');
+    expect([slider.min, slider.max, slider.step]).toEqual(['-10', '10', '0.1']);
+    fireEvent.change(slider, { target: { value: '3.5' } });
+    expect(row().value).toBe('a = 3.5');
+
+    // Editing the range is remembered on the row.
+    const max = screen.getByLabelText('Maximum of a');
+    fireEvent.change(max, { target: { value: '50' } });
+    fireEvent.blur(max);
+    expect((screen.getByRole('slider', { name: 'a' }) as HTMLInputElement).max).toBe('50');
+    const saved = JSON.parse(localStorage.getItem('gxuess.expressions.v1')!);
+    expect(saved[0].slider).toMatchObject({ min: -10, max: 50 });
+  });
+
+  it('offers a slider for an undefined variable', () => {
+    render(<App />);
+    type('y = k x^2');
+    fireEvent.click(screen.getByRole('button', { name: '+ slider for k' }));
+    expect((screen.getByLabelText('Expression 2') as HTMLInputElement).value).toBe('k = 1');
+    expect(screen.getByRole('slider', { name: 'k' })).toBeTruthy();
+    expect(screen.queryByText(/"k" is not defined/)).toBeNull();
+  });
+
+  it('does not show sliders for non-numeric definitions', () => {
+    render(<App />);
+    type('a = 2 + 1');
+    expect(screen.queryByRole('slider')).toBeNull();
+  });
+});
+
+describe('phone layout', () => {
+  it('toggles an expanded expression list and remembers it', () => {
+    const { container } = render(<App />);
+    const app = container.querySelector('.app')!;
+    expect(app.classList.contains('is-panel-expanded')).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Expand expression list' }));
+    expect(app.classList.contains('is-panel-expanded')).toBe(true);
+    expect(JSON.parse(localStorage.getItem('gxuess.settings.v1')!).panelExpanded).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Shrink expression list' }));
+    expect(app.classList.contains('is-panel-expanded')).toBe(false);
+  });
+});

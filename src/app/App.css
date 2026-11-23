@@ -79,6 +79,16 @@
   .app.has-keypad {
     grid-template-rows: minmax(0, 1fr) minmax(0, 28%) auto;
   }
+  /* Expanded list: keep a strip of graph, give the rest to expressions. */
+  .app.is-panel-expanded {
+    grid-template-rows: minmax(0, 24%) minmax(0, 1fr) auto;
+  }
+  .app.is-panel-expanded.has-keypad {
+    grid-template-rows: minmax(0, 18%) minmax(0, 1fr) auto;
+  }
+  .app.is-panel-expanded.is-collapsed {
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
   .app.is-collapsed {
     grid-template-rows: minmax(0, 1fr) auto;
   }

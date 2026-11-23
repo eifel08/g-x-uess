@@ -75,7 +75,9 @@ export function App() {
   }, [toggleKeypad]);
 
   return (
-    <div className={`app${panelOpen ? '' : ' is-collapsed'}${keypadOpen ? ' has-keypad' : ''}`}>
+    <div
+      className={`app${panelOpen ? '' : ' is-collapsed'}${keypadOpen ? ' has-keypad' : ''}${settings.panelExpanded ? ' is-panel-expanded' : ''}`}
+    >
       {panelOpen && (
         <ExpressionPanel
           items={items}
@@ -86,6 +88,8 @@ export function App() {
           onToggleKeypad={toggleKeypad}
           onSelect={setSelectedId}
           onCollapse={() => setPanelOpen(false)}
+          expanded={settings.panelExpanded}
+          onToggleExpanded={() => updateSettings({ panelExpanded: !settings.panelExpanded })}
           top={<TargetRow game={game} />}
           submitFor={submitFor}
           submitBlockedFor={submitBlockedFor}

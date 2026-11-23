@@ -13,6 +13,11 @@ function load(): ExpressionItem[] {
       (i): i is ExpressionItem =>
         i && typeof i.id === 'string' && typeof i.text === 'string' && typeof i.color === 'string' && typeof i.visible === 'boolean',
     );
+    // Drop malformed slider settings rather than the whole row.
+    for (const item of valid) {
+      const s = item.slider;
+      if (s && !(Number.isFinite(s.min) && Number.isFinite(s.max) && s.step > 0 && s.max > s.min)) delete item.slider;
+    }
     return valid.length > 0 ? valid : defaultExpressions();
   } catch {
     return defaultExpressions();

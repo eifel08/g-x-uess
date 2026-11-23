@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { isPlottable, type RowResult } from '../math/types';
 import { ColorPicker } from './ColorPicker';
+import { effectiveBounds, formatSliderValue, parseSliderRow, undefinedVariable } from './slider';
+import { VariableSlider } from './VariableSlider';
 import type { ExpressionItem } from './model';
 
 interface Props {
@@ -17,6 +19,8 @@ interface Props {
   onEnter: () => void;
   onBackspaceEmpty: () => void;
   onNavigate: (delta: -1 | 1) => void;
+  /** Adds a `name = 1` row with a slider, for an undefined variable used here. */
+  onAddSlider?: (name: string) => void;
   /** Game mode: submit this row as a guess for f(x). Set only when the row can be submitted. */
   onSubmit?: () => void;
   /** Game mode: why this function row can't be submitted (Submit shows disabled). */
@@ -41,6 +45,7 @@ export function ExpressionRow({
   onEnter,
   onBackspaceEmpty,
   onNavigate,
+  onAddSlider,
   onSubmit,
   submitBlocked,
   feedback,
@@ -62,6 +67,10 @@ export function ExpressionRow({
   const isCurve = isPlottable(result);
   const error = result?.kind === 'error' && (!focused || settled) ? result.message : null;
   const value = result?.kind === 'value' ? result.value : null;
+  // `a = 3` → slider; `y = a x` with a undefined → offer one.
+  const sliderRow = result?.kind === 'value' && result.name ? parseSliderRow(item.text) : null;
+  const sliderBounds = sliderRow ? effectiveBounds(sliderRow.value, item.slider) : null;
+  const missing = result?.kind === 'error' ? undefinedVariable(result.message) : null;
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
@@ -127,7 +136,21 @@ export function ExpressionRow({
         {error && (
           <div className="expr-row__error" role="status">
             {error}
+            {missing && onAddSlider && (
+              <button type="button" className="expr-row__add-slider" onClick={() => onAddSlider(missing)}>
+                + slider for {missing}
+              </button>
+            )}
           </div>
+        )}
+        {sliderRow && sliderBounds && (
+          <VariableSlider
+            name={sliderRow.name}
+            value={sliderRow.value}
+            bounds={sliderBounds}
+            onValue={(v) => onChange({ text: `${sliderRow.name} = ${formatSliderValue(v, sliderBounds.step)}` })}
+            onBounds={(slider) => onChange({ slider })}
+          />
         )}
         {feedback && (
           <div className={`expr-row__feedback${feedback.correct ? ' is-correct' : ''}`} role="status">
@@ -135,7 +158,7 @@ export function ExpressionRow({
             {feedback.message}
           </div>
         )}
-        {value !== null && (
+        {value !== null && !sliderRow && (
           <div className="expr-row__value">
             {result?.kind === 'value' && result.name ? `${result.name} = ` : '= '}
             {formatValue(value)}

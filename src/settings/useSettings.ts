@@ -6,9 +6,11 @@ export interface Settings {
   /** Show intercepts and intersections on the graph. */
   showPointsOfInterest: boolean;
   keypadOpen: boolean;
+  /** Phones: the expression list takes most of the screen. */
+  panelExpanded: boolean;
 }
 
-const DEFAULTS: Settings = { angleMode: 'rad', showPointsOfInterest: true, keypadOpen: false };
+const DEFAULTS: Settings = { angleMode: 'rad', showPointsOfInterest: true, keypadOpen: false, panelExpanded: false };
 const STORAGE_KEY = 'gxuess.settings.v1';
 
 function load(): Settings {
@@ -18,6 +20,7 @@ function load(): Settings {
       angleMode: raw.angleMode === 'deg' ? 'deg' : 'rad',
       showPointsOfInterest: typeof raw.showPointsOfInterest === 'boolean' ? raw.showPointsOfInterest : DEFAULTS.showPointsOfInterest,
       keypadOpen: typeof raw.keypadOpen === 'boolean' ? raw.keypadOpen : DEFAULTS.keypadOpen,
+      panelExpanded: raw.panelExpanded === true,
     };
   } catch {
     return DEFAULTS;

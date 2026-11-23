@@ -85,6 +85,8 @@ The round in progress (difficulty, seed, tries, hints) is saved in `localStorage
 - Rows without `x` show their value, e.g. `f(2)` shows `= 4`
 - Short error messages such as "Missing closing parenthesis", "f takes 1 argument" or "Circular definition". While you are typing they wait for a short pause before appearing, and one broken row never affects the others
 - Each row has a show/hide toggle, a color picker (8 preset colors plus a custom color), and a delete button. Enter adds a row, Backspace on an empty row deletes it, and ↑/↓ move between rows
+- **Sliders:** a row like `a = 2` gets a slider (default −10…10; edit the min and max at its ends) and a ▶ button that animates the value back and forth. When an expression uses an undefined variable (`y = k x`), the error offers a **+ slider for k** button that adds `k = 1`. Every curve using the variable updates live
+- **Phones:** the expression list sits under the graph. The double-chevron button in its header expands it to most of the screen, so you can see more expressions at once (a strip of graph stays visible), and tapping it again restores the split. The choice is remembered
 - The expression list is saved in `localStorage`
 
 **On-screen math keypad** (keyboard button in the panel header, or **Alt+K**)
