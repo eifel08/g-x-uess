@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { compileExpressions } from '../math/compile';
-import { compileTarget, DIFFICULTIES, generateTarget, isGoodTarget, type Difficulty } from './generator';
+import { compileTarget, DIFFICULTIES, freshSeed, generateTarget, isGoodTarget, type Difficulty } from './generator';
+import { generateTarget3D } from './generator3d';
 import { hintsFor } from './hints';
 import { judgeGuess } from './judge';
-import { gameReducer, initialGame } from './state';
+import { mulberry32 } from './random';
+import { gameReducer, initialGame, RECENT_LIMIT } from './state';
 
 const fn = (text: string) => {
   const r = compileExpressions([{ id: 'a', text }]).a;
@@ -153,5 +155,47 @@ describe('gameReducer', () => {
     let s = initialGame(1);
     for (let i = 0; i < 10; i++) s = gameReducer(s, { type: 'hint', available: 4 });
     expect(s.hintsShown).toBe(4);
+  });
+
+  it('remembers the last rounds per difficulty, newest first', () => {
+    let s = initialGame(1, 2);
+    s = gameReducer(s, { type: 'new', seed: 2 });
+    s = gameReducer(s, { type: 'new', seed: 3, difficulty: 4 });
+    expect(s.recent).toEqual({ 2: [2, 1] });
+    const rounds = RECENT_LIMIT + 10;
+    for (let seed = 3; seed < 3 + rounds; seed++) s = gameReducer(s, { type: 'new', seed: seed + 1 });
+    expect(s.recent[2]).toEqual([2, 1]); // other difficulties untouched
+    // Newest first, capped at RECENT_LIMIT.
+    const expected = Array.from({ length: RECENT_LIMIT }, (_, i) => 2 + rounds - i);
+    expect(s.recent[4]).toEqual(expected);
+  });
+});
+
+describe('freshSeed', () => {
+  const draws = (...seeds: number[]) => () => seeds.shift()!;
+
+  it('redraws until the target differs from the recent ones', () => {
+    const avoid = new Set([generateTarget(3, 1).expression, generateTarget(3, 2).expression]);
+    expect(freshSeed((s) => generateTarget(3, s).expression, avoid, draws(1, 2, 1, 7))).toBe(7);
+  });
+
+  it('gives up after a bounded number of draws', () => {
+    expect(freshSeed(() => 'x', new Set(['x']), draws(1, 2, 3, 4), 3)).toBe(3);
+  });
+
+  it('never repeats any of the last rounds, even in the smallest pool', () => {
+    // 3D difficulty 3 has only ~45 distinct targets; 2D difficulty 1 ~48.
+    for (const [generate, d] of [[generateTarget3D, 3], [generateTarget, 1]] as const) {
+      const rng = mulberry32(123);
+      const draw = () => Math.floor(rng() * 2 ** 31);
+      const history: string[] = [];
+      for (let round = 0; round < 60; round++) {
+        const avoid = new Set(history.slice(-(RECENT_LIMIT + 1)));
+        const seed = freshSeed((s) => generate(d, s).expression, avoid, draw);
+        const expression = generate(d, seed).expression;
+        expect(avoid.has(expression), `round ${round}: ${expression}`).toBe(false);
+        history.push(expression);
+      }
+    }
   });
 });

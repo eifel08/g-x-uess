@@ -1,13 +1,23 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useReducer } from 'react';
 import type { RealFn, RealFn2 } from '../math/types';
-import { compileTarget, generateTarget, randomSeed, type Difficulty, type TargetFunction } from './generator';
+import { compileTarget, freshSeed, generateTarget, randomSeed, type Difficulty, type TargetFunction } from './generator';
 import { compileTarget3D, generateTarget3D } from './generator3d';
 import { hintsFor } from './hints';
 import { hintsFor3D } from './hints3d';
 import { judgeGuess, type GuessResult } from './judge';
 import { judgeGuess3D } from './judge3d';
-import { hashExpression, pickFreshSeed, remember, type RecentTargets } from './recent';
-import { gameReducer, initialGame, type GameState } from './state';
+import { gameReducer, initialGame, RECENT_LIMIT, type GameState } from './state';
+
+/** Keeps only well-formed seed lists from storage. */
+function loadRecent(raw: unknown): GameState['recent'] {
+  const recent: GameState['recent'] = {};
+  if (!raw || typeof raw !== 'object') return recent;
+  for (const d of [1, 2, 3, 4, 5] as Difficulty[]) {
+    const seeds = (raw as Record<string, unknown>)[d];
+    if (Array.isArray(seeds)) recent[d] = seeds.filter(Number.isInteger).slice(0, RECENT_LIMIT) as number[];
+  }
+  return recent;
+}
 
 /** Everything that differs between the 2D and 3D games. */
 export interface GameKit<Fn> {
@@ -47,7 +57,7 @@ function load(storageKey: string): GameState {
     const raw = JSON.parse(localStorage.getItem(storageKey) ?? 'null') as Partial<GameState> | null;
     if (raw && [1, 2, 3, 4, 5].includes(raw.difficulty as number) && Number.isInteger(raw.seed)) {
       return {
-        ...initialGame(raw.seed!, raw.difficulty as Difficulty),
+        ...initialGame(raw.seed!, raw.difficulty as Difficulty, loadRecent(raw.recent)),
         attempts: Number(raw.attempts) || 0,
         hintsShown: Number(raw.hintsShown) || 0,
         status: raw.status === 'won' || raw.status === 'revealed' ? raw.status : 'playing',
@@ -58,20 +68,6 @@ function load(storageKey: string): GameState {
     // fall through to a fresh game
   }
   return initialGame(randomSeed());
-}
-
-function loadRecent(key: string): RecentTargets {
-  try {
-    const raw = JSON.parse(localStorage.getItem(key) ?? '{}') as RecentTargets;
-    const clean: RecentTargets = {};
-    for (const d of [1, 2, 3, 4, 5] as Difficulty[]) {
-      const list = raw?.[d];
-      if (Array.isArray(list)) clean[d] = list.filter((h) => typeof h === 'string');
-    }
-    return clean;
-  } catch {
-    return {};
-  }
 }
 
 /** The parts of a game the UI controls need (shared by 2D and 3D). */
@@ -98,19 +94,6 @@ export function useGameWith<Fn>(kit: GameKit<Fn>): Game<Fn> {
   const targetFn = useMemo(() => kit.compile(target.expression) ?? kit.fallback, [kit, target]);
   const hints = useMemo(() => kit.hints(target, targetFn), [kit, target, targetFn]);
 
-  // Recently played targets per difficulty (as hashes), so new rounds don't repeat them.
-  const recentKey = `${kit.storageKey}.recent`;
-  const recent = useRef<RecentTargets>(loadRecent(recentKey));
-  useEffect(() => {
-    const d = target.difficulty;
-    recent.current = { ...recent.current, [d]: remember(recent.current[d] ?? [], hashExpression(target.expression)) };
-    try {
-      localStorage.setItem(recentKey, JSON.stringify(recent.current));
-    } catch {
-      // best-effort persistence
-    }
-  }, [recentKey, target]);
-
   useEffect(() => {
     try {
       const { feedback: _omit, ...persisted } = state;
@@ -120,14 +103,16 @@ export function useGameWith<Fn>(kit: GameKit<Fn>): Game<Fn> {
     }
   }, [kit, state]);
 
-  const currentDifficulty = state.difficulty;
   const newFunction = useCallback(
     (difficulty?: Difficulty) => {
-      const d = difficulty ?? currentDifficulty;
-      const seed = pickFreshSeed((s) => kit.generate(d, s), recent.current[d] ?? [], randomSeed);
-      dispatch({ type: 'new', seed, difficulty: d });
+      const d = difficulty ?? state.difficulty;
+      // The round being left joins `recent` in the reducer, so avoid it here too.
+      const seeds = [...(state.recent[d] ?? []), ...(d === state.difficulty ? [state.seed] : [])];
+      const avoid = new Set(seeds.map((s) => kit.generate(d, s).expression));
+      const seed = freshSeed((s) => kit.generate(d, s).expression, avoid);
+      dispatch({ type: 'new', seed, difficulty });
     },
-    [kit, currentDifficulty],
+    [kit, state.difficulty, state.seed, state.recent],
   );
   const submit = useCallback(
     (rowId: string, text: string, guess: Fn) =>

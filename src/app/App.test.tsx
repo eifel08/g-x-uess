@@ -115,7 +115,7 @@ describe('game mode in the app', () => {
     expect(formula()).toBe('f(x) = ?');
   });
 
-  it('does not repeat a recent function across many new rounds', () => {
+  it('does not repeat any of the last 25 functions across many new rounds', () => {
     render(<App />);
     const formulas: string[] = [];
     for (let i = 0; i < 25; i++) {
@@ -124,10 +124,20 @@ describe('game mode in the app', () => {
       formulas.push(generateTarget(difficulty, seed).expression);
     }
     expect(new Set(formulas).size).toBe(formulas.length);
-    // Recent rounds are remembered as hashes, never as formulas.
-    const recent = localStorage.getItem('gxuess.game.v1.recent')!;
-    expect(JSON.parse(recent)[DIFFICULTY].length).toBeGreaterThanOrEqual(25);
-    for (const f of formulas) expect(recent).not.toContain(f);
+    // Past rounds are remembered by seed (newest first), up to RECENT_LIMIT.
+    const saved = JSON.parse(localStorage.getItem('gxuess.game.v1')!);
+    expect(saved.recent[DIFFICULTY]).toHaveLength(25);
+  });
+
+  it('remembers past targets so new ones avoid them, across reloads', () => {
+    localStorage.setItem('gxuess.game.v1', JSON.stringify({ difficulty: 1, seed: 7, recent: { 1: [3, 'junk', 5] } }));
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Give up and reveal f(x)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'New function' }));
+    const saved = JSON.parse(localStorage.getItem('gxuess.game.v1')!);
+    expect(saved.recent).toEqual({ 1: [7, 3, 5] });
+    const avoided = [7, 3, 5].map((s) => generateTarget(1, s).expression);
+    expect(avoided).not.toContain(generateTarget(1, saved.seed).expression);
   });
 
   it('shows hints progressively and reveals on give-up', () => {

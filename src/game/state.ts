@@ -21,7 +21,12 @@ export interface GameState {
   /** Whether the target curve f(x) is drawn on the graph. */
   targetVisible: boolean;
   feedback: SubmissionFeedback | null;
+  /** Seeds of the last few finished-or-skipped rounds per difficulty, newest first, so new targets don't repeat them. */
+  recent: Partial<Record<Difficulty, number[]>>;
 }
+
+/** How many past targets per difficulty a new one must differ from. */
+export const RECENT_LIMIT = 30;
 
 export type GameAction =
   /** Start a new target. Seeds come from the caller so the reducer stays pure. */
@@ -31,14 +36,21 @@ export type GameAction =
   | { type: 'reveal' }
   | { type: 'toggleTarget' };
 
-export function initialGame(seed: number, difficulty: Difficulty = 1): GameState {
-  return { difficulty, seed, attempts: 0, hintsShown: 0, status: 'playing', targetVisible: true, feedback: null };
+export function initialGame(
+  seed: number,
+  difficulty: Difficulty = 1,
+  recent: GameState['recent'] = {},
+): GameState {
+  return { difficulty, seed, attempts: 0, hintsShown: 0, status: 'playing', targetVisible: true, feedback: null, recent };
 }
 
 export function gameReducer(state: GameState, action: GameAction): GameState {
   switch (action.type) {
-    case 'new':
-      return { ...initialGame(action.seed, action.difficulty ?? state.difficulty), targetVisible: state.targetVisible };
+    case 'new': {
+      const past = [state.seed, ...(state.recent[state.difficulty] ?? [])].slice(0, RECENT_LIMIT);
+      const recent = { ...state.recent, [state.difficulty]: past };
+      return { ...initialGame(action.seed, action.difficulty ?? state.difficulty, recent), targetVisible: state.targetVisible };
+    }
     case 'submitted': {
       if (state.status !== 'playing') return state;
       const feedback = { rowId: action.rowId, text: action.text, result: action.result };
