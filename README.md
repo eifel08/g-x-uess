@@ -62,7 +62,7 @@ src/
 │   ├── renderer.ts       Draws a scene on the canvas (grid, labels, curves, points)
 │   └── GraphCanvas.tsx   React component: resizing, pointer/wheel/keyboard input, hit testing
 ├── expressions/    Expression list UI and state (reducer, persistence, rows, color picker)
-├── game/           Game logic for Phase 2 (currently: checking whether two functions are equal)
+├── game/           Game logic for Phase 2 (currently: two checks for whether two functions are equal)
 └── styles/         Global design tokens (CSS variables, light and dark)
 public/             Static assets and web app manifest (Phase 3 builds on these)
 .github/workflows/  CI: typecheck, test, build
@@ -79,5 +79,11 @@ public/             Static assets and web app manifest (Phase 3 builds on these)
 ## Roadmap toward Phase 2
 
 - `game/`: puzzle definitions (hidden function, difficulty, allowed tools), round state, scoring, hints
-- `game/equivalence.ts` already checks whether two functions agree numerically, so a guess like `2(x+1)` matches a hidden `2x+2`
+- Two checks for whether a guess matches the hidden function (e.g. `2(x+1)` vs `2x+2`):
+  - `game/equivalence.ts` (`compareFunctions`) compares values at 256 points in [−10, 10]
+  - `game/integralEquivalence.ts` (`compareFunctionsByIntegral`) tests 256 random intervals [a, b] of width w and requires
+    `∫|f − g| dx ≤ ε · (∫|f| dx + ∫|g| dx + w)` on every one (default ε = 10⁻⁶). Interval centres and widths are drawn
+    log-uniformly from 10⁻² to 10⁶ with random signs, so it covers both tiny and very large ranges. Integrals use
+    composite Simpson's rule, rescaled so huge values can't overflow. Points where both functions are undefined are skipped;
+    an interval where only one of them is defined fails
 - UI: a game mode that plots the hidden f(x) (or samples of it) next to the player's guesses

@@ -4,3 +4,10 @@
  * rounds arrive in Phase 2.
  */
 export { compareFunctions, type EquivalenceOptions, type EquivalenceResult } from './equivalence';
+export {
+  compareFunctionsByIntegral,
+  randomIntervals,
+  type IntegralEquivalenceOptions,
+  type IntegralEquivalenceResult,
+  type Interval,
+} from './integralEquivalence';
