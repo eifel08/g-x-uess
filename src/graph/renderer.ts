@@ -15,7 +15,13 @@ export interface GraphTheme {
 
 export interface RenderedCurve {
   color: string;
+  /** Stroked polylines (curve, line or region boundary). */
   lines: Polyline[];
+  /** Shaded region polygons, if this is an inequality. */
+  fills?: Polyline[];
+  fillRule?: CanvasFillRule;
+  /** Dashed stroke (strict inequalities). */
+  dashed?: boolean;
 }
 
 export interface MarkedPoint {
@@ -43,6 +49,8 @@ export interface Scene {
 }
 
 const CURVE_WIDTH = 2.5;
+/** Opacity of inequality shading: light enough that overlaps stay readable. */
+const REGION_ALPHA = 0.2;
 const LABEL_SIZE = 12;
 
 export function drawScene(ctx: CanvasRenderingContext2D, scene: Scene) {
@@ -52,6 +60,7 @@ export function drawScene(ctx: CanvasRenderingContext2D, scene: Scene) {
   ctx.fillRect(0, 0, size.width, size.height);
 
   drawGrid(ctx, scene);
+  drawRegions(ctx, scene);
   drawCurves(ctx, scene);
   drawPois(ctx, scene);
   drawPoints(ctx, scene);
@@ -167,12 +176,30 @@ function haloText(ctx: CanvasRenderingContext2D, text: string, x: number, y: num
   ctx.fillText(text, x, y);
 }
 
+function drawRegions(ctx: CanvasRenderingContext2D, { curves }: Scene) {
+  ctx.globalAlpha = REGION_ALPHA;
+  for (const curve of curves) {
+    if (!curve.fills?.length) continue;
+    ctx.fillStyle = curve.color;
+    ctx.beginPath();
+    for (const poly of curve.fills) {
+      ctx.moveTo(poly[0], poly[1]);
+      for (let i = 2; i < poly.length; i += 2) ctx.lineTo(poly[i], poly[i + 1]);
+      ctx.closePath();
+    }
+    // One fill per plot: overlapping polygons of the same region never darken.
+    ctx.fill(curve.fillRule ?? 'nonzero');
+  }
+  ctx.globalAlpha = 1;
+}
+
 function drawCurves(ctx: CanvasRenderingContext2D, { curves }: Scene) {
   ctx.lineWidth = CURVE_WIDTH;
   ctx.lineJoin = 'round';
-  ctx.lineCap = 'round';
   for (const curve of curves) {
     ctx.strokeStyle = curve.color;
+    ctx.lineCap = curve.dashed ? 'butt' : 'round';
+    ctx.setLineDash(curve.dashed ? [9, 6] : []);
     ctx.beginPath();
     for (const line of curve.lines) {
       ctx.moveTo(line[0], line[1]);
@@ -180,6 +207,7 @@ function drawCurves(ctx: CanvasRenderingContext2D, { curves }: Scene) {
     }
     ctx.stroke();
   }
+  ctx.setLineDash([]);
 }
 
 function drawPois(ctx: CanvasRenderingContext2D, { pois, viewport: v, size, theme }: Scene) {

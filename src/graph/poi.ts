@@ -17,6 +17,12 @@ export interface PointOfInterest {
   curveIds: string[];
 }
 
+/** A vertical line x = `x`. */
+export interface PoiVertical {
+  id: string;
+  x: number;
+}
+
 export interface PoiOptions {
   /** Spacing of the scan grid in pixels. */
   stepPx?: number;
@@ -46,10 +52,11 @@ export function findPointsOfInterest(
   bounds: Bounds,
   size: Size,
   options: PoiOptions = {},
+  verticals: readonly PoiVertical[] = [],
 ): PointOfInterest[] {
   const { stepPx = 3, maxPerSource = 40 } = options;
   const { xMin, xMax, yMin, yMax } = bounds;
-  if (size.width <= 0 || curves.length === 0) return [];
+  if (size.width <= 0 || (curves.length === 0 && verticals.length === 0)) return [];
 
   const n = Math.max(2, Math.ceil(size.width / stepPx));
   const xs = new Float64Array(n + 1);
@@ -112,6 +119,20 @@ export function findPointsOfInterest(
             curveIds: [curves[i].id, curves[j].id],
           })),
       );
+    }
+  }
+
+  // Vertical lines: x-intercept, and exact intersections x = x0 with each curve.
+  for (const v of verticals) {
+    if (v.x < xMin || v.x > xMax) continue;
+    if (yMin <= 0 && yMax >= 0) {
+      points.push({ key: `vroot:${v.id}`, kind: 'x-intercept', x: v.x, y: 0, curveIds: [v.id] });
+    }
+    for (const c of curves) {
+      const y = c.fn(v.x);
+      if (Number.isFinite(y) && inView(y)) {
+        points.push({ key: `int:${c.id}|${v.id}`, kind: 'intersection', x: v.x, y, curveIds: [c.id, v.id] });
+      }
     }
   }
 

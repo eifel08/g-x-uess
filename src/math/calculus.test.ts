@@ -110,8 +110,7 @@ describe('functions and lists', () => {
 
   it('accepts unicode symbols and inequalities', () => {
     expect(value(one('3 ≤ 4'))).toBe(1);
-    expect(one('y < x^2')).toEqual({ kind: 'error', message: 'Inequalities in y (shaded regions) are not supported yet' });
-    expect(one('x^2 + y^2 = 4')).toEqual({ kind: 'error', message: 'Equations like x² + y² = 4 are not supported yet' });
+    expect(one('y < x^2')).toMatchObject({ kind: 'curve', inequality: '<' });
   });
 });
 

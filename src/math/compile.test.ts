@@ -97,7 +97,7 @@ describe('compileExpressions', () => {
     expect(compileOne('foo(x)')).toEqual({ kind: 'error', message: 'Unknown function "foo"' });
     expect(compileOne('x + b')).toEqual({ kind: 'error', message: '"b" is not defined' });
     expect(compileOne('a = x + 1')).toEqual({ kind: 'error', message: 'Use a(x) = … to define a function of x' });
-    expect(compileOne('sin(x) = 2')).toEqual({ kind: 'error', message: '"sin" is a reserved name' });
+    expect(compileOne('sin = 2')).toEqual({ kind: 'error', message: '"sin" is a reserved name' });
     expect(compileOne('"hello"').kind).toBe('error');
     expect(compileOne('[1, 2]').kind).toBe('error');
     expect(compileOne('5 cm').kind).toBe('error');

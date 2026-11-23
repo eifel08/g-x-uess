@@ -70,3 +70,11 @@ describe('findPointsOfInterest', () => {
     expect(points).toHaveLength(0);
   });
 });
+
+describe('vertical lines', () => {
+  it('report their x-intercept and exact intersections with curves', () => {
+    const points = findPointsOfInterest(curves('x^2'), bounds, size, {}, [{ id: 'v', x: 2 }]);
+    expect(points).toContainEqual({ key: 'vroot:v', kind: 'x-intercept', x: 2, y: 0, curveIds: ['v'] });
+    expect(points).toContainEqual({ key: 'int:c0|v', kind: 'intersection', x: 2, y: 4, curveIds: ['c0', 'v'] });
+  });
+});

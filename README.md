@@ -38,6 +38,7 @@ The site is then served at `https://<owner>.github.io/<repo>/`.
 - Grid and tick spacing follow a 1-2-5 sequence and adjust as you zoom. Axis labels stay at the edge when an axis is off-screen, and very large or small values use scientific notation (`2×10⁻⁶`)
 - Adaptive sampling keeps curves smooth. Plotting stops at poles (`1/x`, `tan(x)`) and jumps (`floor(x)`) instead of drawing a vertical line across them, ends neatly at domain edges (`sqrt(x)`), and runs off to infinity where the function does (`ln(x)` at 0)
 - Hovering near a curve shows its coordinates. Clicking or tapping a curve pins a point, and clicking the point again removes it
+- Vertical lines, circles and implicit curves support hover and pinning too. Circle points are exact projections; points on generic implicit curves are refined onto F = 0 with Newton steps
 - **Points of interest:** x-intercepts, y-intercepts and curve-curve intersections are found automatically and shown as gray dots. Hovering or tapping one shows a callout with its kind and coordinates to 10 significant digits; clicking pins it, and a pinned point follows its curve as you edit. Like Desmos, the dots shown belong to the selected expression or the curve under the mouse. With nothing selected, they appear only when there are 24 or fewer. Poles and jumps are never reported as roots. A curve that oscillates too fast for the current zoom contributes no points, rather than an incomplete set
 - **Settings** (sliders button): radians/degrees for trig functions (a "Degrees" badge shows while active) and a points-of-interest switch. Settings are saved in `localStorage`
 - Light and dark themes follow the system setting
@@ -54,7 +55,13 @@ The site is then served at `https://<owner>.github.io/<repo>/`.
 - Constants: `pi` (or `π`), `e`, `tau`, `phi`, `∞`; symbols `θ`, `≤ ≥ ≠`; subscripted names like `a_1`
 - Calculator-style shorthand: `2x`, `sin x`, `2 sin x`, `x(x+1)`, `(x+1)(x-1)`, `|x|`, `x²`, `√x`
 - `log` is base 10, `ln` is the natural log, and a custom base is written `log_2(x)`, `log_{10}(x)` or `log(x, b)`
-- Not supported yet: shaded inequalities in y (`y < x^2`), implicit equations (`x² + y² = 4`) and vertical lines (`x = 3`). Each gets a clear message
+- **Vertical lines:** `x = 3`, `x = -2.5`, `x = sin(1)`, `x = a/2`
+- **Circles and implicit equations:** `x^2 + y^2 = 4`, `(x - 1)^2 + (y + 2)^2 = 9`, `x^2 + y^2 + 2x - 4y = 4`, ellipses, `x = y^2`, `sin(x y) = 0.5`, … Equations are classified automatically:
+  - circles (any `a(x² + y²) + dx + ey + f = 0`) are drawn exactly from their centre and radius
+  - lines (`2y + x = 4`, `3x = 6`) and anything linear in y (`x^2 = 2y`, `xy = 1`) become exact explicit curves
+  - everything else is contoured
+- **Shaded inequalities:** `y < x^2`, `y <= x + 1`, `y > sin(x)`, `y >= -x^2 + 4`, `x > 2`, `x^2 + y^2 < 4`, `sin(x) sin(y) > 0.2`, … Strict `<`/`>` get a dashed boundary and `≤`/`≥` a solid one, like Desmos. Each region is shaded in its expression's color at 20% opacity, so overlapping regions stay readable
+- Still not supported, each with a clear message: double inequalities like `1 < y < 2`, and `y` outside an equation or inequality
 - Rows without `x` show their value, e.g. `f(2)` shows `= 4`
 - Short error messages such as "Missing closing parenthesis", "f takes 1 argument" or "Circular definition". While you are typing they wait for a short pause before appearing, and one broken row never affects the others
 - Each row has a show/hide toggle, a color picker (8 preset colors plus a custom color), and a delete button. Enter adds a row, Backspace on an empty row deletes it, and ↑/↓ move between rows
@@ -79,13 +86,17 @@ src/
 │   ├── specialForms.ts   d/dx, ∫, Σ, Π: functions that receive their arguments unevaluated
 │   ├── numeric.ts        Numerical differentiation and adaptive Gauss–Kronrod integration
 │   ├── functions.ts      gcd/lcm, list statistics, ranges, degree-mode trig
+│   ├── implicitShape.ts  Detects circles / lines / linear-in-y equations for exact drawing
 │   ├── scope.ts          Layered evaluation scopes
 │   └── types.ts          RowResult / RealFn: the interface between math and UI
 ├── graph/          Graph engine
 │   ├── viewport.ts       World ↔ screen transforms, pan and zoom math
 │   ├── ticks.ts          Grid spacing and number formatting
 │   ├── sampler.ts        Adaptive curve sampling and discontinuity detection
-│   ├── poi.ts            Points of interest: roots, y-intercepts, intersections
+│   ├── plots.ts          GraphPlot (function / vline / implicit, ± inequality) → strokes and fills per frame
+│   ├── circle.ts         Exact circle geometry (visible arc only for huge circles), shading polygons
+│   ├── implicit.ts       Adaptive marching squares for F(x, y) = 0 and regions F(x, y) < 0
+│   ├── poi.ts            Points of interest: roots, y-intercepts, intersections (incl. vertical lines)
 │   ├── hitTest.ts        Nearest curve / point of interest under the pointer
 │   ├── renderer.ts       Draws a scene on the canvas (grid, labels, curves, points, callouts)
 │   └── GraphCanvas.tsx   React component: resizing, pointer/wheel/keyboard input, pins
@@ -108,6 +119,9 @@ public/             Static assets and web app manifest (Phase 3 builds on these)
 - **The graph knows nothing about expressions.** `GraphCanvas` receives `{ id, color, fn }` curves, where `fn` is a plain `(x: number) => number`. Phase 2 can draw a hidden target function, or compare a guess against it, without involving the expression UI.
 - **Pan and zoom do not re-render React.** The viewport lives in refs and frames are drawn with `requestAnimationFrame`. Resampling a curve takes about 1 ms (about 3 ms for difficult functions like `sin(1/x)`), so every frame is resampled for full detail.
 - **Points of interest are exact.** Each curve is sampled on a grid about 3 px wide. Sign changes are refined by bisection to full double precision and kept only if the value there is truly near zero, which rules out poles and jumps. Touching zeros such as x² at 0 are found with golden-section search. A second, jittered grid guards against aliasing. Computing points of interest every frame keeps panning at 60 fps.
+- **Equations and inequalities are classified once, when compiled.** `y <op> f(x)` and `x <op> c` are recognised from the syntax. Anything else becomes F = lhs − rhs, and F is then fitted numerically against a quadratic and a "linear in y" form, then checked at scattered points. Circles keep exact geometry, and lines and linear-in-y equations become ordinary sampled curves. Only genuinely implicit relations pay for contouring.
+- **Implicit curves are adaptive and exact.** The view is sampled on a 16 px grid; cells with a sign change are refined to 4 px leaves and contoured with marching squares (saddles resolved by the centre value). Each crossing is solved with regula falsi to near machine precision, and sign changes through poles are rejected. Segments are chained into polylines so dashes flow, and each region is filled with one seam-free path. Eight relations, including two generic implicit ones, still pan at 60 fps.
+- **Huge circles stay exact.** Points are computed from the centre and radius with a step that keeps the polygon within 0.15 px of the true circle. When the radius is over 200,000 px only the visible arc is generated, so the circle is smooth at 10⁻⁸ zoom.
 - **Angle mode is a compile option.** `compileExpressions(rows, { angleMode: 'deg' })` puts degree-based trig functions into the evaluation scope, so user functions, derivatives and integrals all follow the setting, and sin(180°) is exactly 0.
 - **Relative `base`.** Vite builds with `base: './'`, so the same `dist/` works on static hosting, as a PWA and inside an Android WebView.
 

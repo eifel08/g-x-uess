@@ -13,7 +13,8 @@ import {
 import { nthDerivative } from './numeric';
 import { preprocess } from './preprocess';
 import { LayeredScope, toReal } from './scope';
-import type { CompiledRows, ExpressionSource, RealFn, RowResult } from './types';
+import { analyzeImplicit } from './implicitShape';
+import type { CompiledRows, Comparison, ExpressionSource, RealFn, RealFn2, RowResult } from './types';
 
 export interface CompileOptions {
   /** Units for trigonometric functions. Default: radians. */
@@ -57,11 +58,29 @@ const call = (name: string, args: AnyNode[]) => asAny(new math.FunctionNode(name
 const PRIME_NAME = /^(.+?)__d(\d+)$/;
 const MAX_PRIME_ORDER = 6;
 
-const RELATIONAL = new Set(['larger', 'smaller', 'largerEq', 'smallerEq', 'equal', 'unequal']);
+const RELATIONAL_OPS: Record<string, Relation> = {
+  larger: '>',
+  smaller: '<',
+  largerEq: '>=',
+  smallerEq: '<=',
+  equal: '=',
+};
+
+type Relation = '=' | Comparison;
+
+const FLIP: Record<Relation, Relation> = { '=': '=', '<': '>', '>': '<', '<=': '>=', '>=': '<=' };
 
 /* ------------------------------------------------------------------------ */
 /* Stage 1: parse each row on its own                                        */
 /* ------------------------------------------------------------------------ */
+
+/**
+ * How an equation / inequality is drawn:
+ *  - curve:    y <op> body(x)          (y = x², y < sin x, x² = y)
+ *  - vline:    x <op> body             (x = 3, x > a)   body has no x or y
+ *  - implicit: body(x, y) <op> 0       (x² + y² = 4, xy > 1); body = lhs − rhs
+ */
+type Shape = 'curve' | 'vline' | 'implicit';
 
 type ParsedRow =
   | { kind: 'empty' }
@@ -70,20 +89,44 @@ type ParsedRow =
   | { kind: 'func'; name: string; params: string[]; body: AnyNode }
   /** a = body */
   | { kind: 'var'; name: string; body: AnyNode }
-  /** y = body, or a bare expression */
-  | { kind: 'expr'; body: AnyNode; explicitY: boolean };
+  /** A bare expression: a curve if it uses x, otherwise a value */
+  | { kind: 'expr'; body: AnyNode }
+  /** An equation or inequality in x and/or y */
+  | { kind: 'relation'; shape: Shape; op: Relation; body: AnyNode };
 
 export function parseRow(text: string): ParsedRow {
   if (text.trim() === '') return { kind: 'empty' };
+  let source: string;
+  try {
+    source = preprocess(text);
+  } catch (err) {
+    return { kind: 'error', message: friendlySyntaxError(err) };
+  }
+
   let node: AnyNode;
   try {
-    node = parse(preprocess(text)) as unknown as AnyNode;
+    node = parse(source) as unknown as AnyNode;
   } catch (err) {
-    return { kind: 'error', message: friendlySyntaxError(err, text) };
+    // mathjs only accepts a name or f(x) left of "=", so equations like
+    // x² + y² = 4 or 2y = x arrive here: split at the "=" and parse each side.
+    const sides = splitEquation(source);
+    if (!sides) return { kind: 'error', message: friendlySyntaxError(err) };
+    try {
+      const lhs = parse(sides[0]) as unknown as AnyNode;
+      const rhs = parse(sides[1]) as unknown as AnyNode;
+      return relation(lhs, rhs, '=');
+    } catch (sideErr) {
+      return { kind: 'error', message: friendlySyntaxError(sideErr) };
+    }
   }
 
   if (node.type === 'FunctionAssignmentNode') {
     const name = node.name!;
+    // `sin(x) = y`, `x(y) = 1`: not a definition, an equation.
+    if (RESERVED_NAMES.has(name) || ALL_FUNCTION_NAMES.has(name)) {
+      const lhs = call(name, (node.params ?? []).map((p) => asAny(new math.SymbolNode(p))));
+      return relation(lhs, node.expr!, '=');
+    }
     return { kind: 'func', name, params: node.params ?? [], body: node.expr! };
   }
   if (node.type === 'AssignmentNode') {
@@ -92,29 +135,78 @@ export function parseRow(text: string): ParsedRow {
     }
     const name = node.object.name!;
     const body = node.value as AnyNode;
-    if (name === 'y') return { kind: 'expr', body, explicitY: true };
-    if (name === 'x') return { kind: 'error', message: 'Vertical lines (x = …) are not supported yet' };
+    if (name === 'y' || name === 'x') return relation(node.object, body, '=');
     return { kind: 'var', name, body };
   }
-  if (node.type === 'OperatorNode' && RELATIONAL.has(node.fn as string) && mentionsY(node)) {
-    return { kind: 'error', message: 'Inequalities in y (shaded regions) are not supported yet' };
+  if (node.type === 'RelationalNode') {
+    return { kind: 'error', message: 'Double inequalities like 1 < y < 2 are not supported yet' };
   }
-  return { kind: 'expr', body: node, explicitY: false };
+  if (node.type === 'OperatorNode' && RELATIONAL_OPS[node.fn as string] && (mentions(node, 'x') || mentions(node, 'y'))) {
+    return relation(node.args![0], node.args![1], RELATIONAL_OPS[node.fn as string]);
+  }
+  if (mentions(node, 'y')) {
+    return { kind: 'error', message: 'y can only be used in an equation or inequality, e.g. y = x^2' };
+  }
+  return { kind: 'expr', body: node };
 }
 
-const mentionsY = (node: AnyNode) => node.filter((n) => n.type === 'SymbolNode' && n.name === 'y').length > 0;
+/** Classifies `lhs <op> rhs` as a curve, vertical line or implicit relation. */
+function relation(lhs: AnyNode, rhs: AnyNode, op: Relation): ParsedRow {
+  const lx = mentions(lhs, 'x');
+  const ly = mentions(lhs, 'y');
+  const rx = mentions(rhs, 'x');
+  const ry = mentions(rhs, 'y');
+  if (!lx && !ly && !rx && !ry) {
+    return { kind: 'error', message: 'An equation needs x or y, e.g. y = 2x or x = 3' };
+  }
+  if (isSymbol(lhs, 'y') && !ry) return { kind: 'relation', shape: 'curve', op, body: rhs };
+  if (isSymbol(rhs, 'y') && !ly) return { kind: 'relation', shape: 'curve', op: FLIP[op], body: lhs };
+  if (isSymbol(lhs, 'x') && !rx && !ry) return { kind: 'relation', shape: 'vline', op, body: rhs };
+  if (isSymbol(rhs, 'x') && !lx && !ly) return { kind: 'relation', shape: 'vline', op: FLIP[op], body: lhs };
+  const difference = new math.OperatorNode('-', 'subtract', [m(lhs), new math.ParenthesisNode(m(rhs))]);
+  return { kind: 'relation', shape: 'implicit', op, body: asAny(difference) };
+}
 
-function friendlySyntaxError(err: unknown, text: string): string {
+/**
+ * Splits "lhs = rhs" at its single top-level "=" (not part of <=, >=, !=, ==).
+ * Returns null if there isn't exactly one.
+ */
+function splitEquation(text: string): [string, string] | null {
+  let depth = 0;
+  const positions: number[] = [];
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '(' || ch === '[' || ch === '{') depth++;
+    else if (ch === ')' || ch === ']' || ch === '}') depth--;
+    else if (ch === '=' && depth === 0) {
+      const prev = text[i - 1];
+      const next = text[i + 1];
+      if (prev === '<' || prev === '>' || prev === '!' || prev === '=' || next === '=') continue;
+      positions.push(i);
+    }
+  }
+  if (positions.length !== 1) return null;
+  const [i] = positions;
+  const lhs = text.slice(0, i).trim();
+  const rhs = text.slice(i + 1).trim();
+  return lhs && rhs ? [lhs, rhs] : null;
+}
+
+const unwrap = (node: AnyNode): AnyNode => (node.type === 'ParenthesisNode' ? unwrap(node.content!) : node);
+const isSymbol = (node: AnyNode, name: string) => {
+  const n = unwrap(node);
+  return n.type === 'SymbolNode' && n.name === name;
+};
+const mentions = (node: AnyNode, name: string) =>
+  node.filter((n) => n.type === 'SymbolNode' && n.name === name).length > 0;
+
+function friendlySyntaxError(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err);
   const msg = raw.replace(/\s*\(char \d+\)\s*$/, '');
   if (/^Unexpected end of expression/.test(msg)) return 'Expression is incomplete';
   if (/^Parenthesis \) expected/.test(msg)) return 'Missing closing parenthesis';
   if (/^Unexpected operator \)/.test(msg) || /^Unexpected "\)"/.test(msg)) return 'Unmatched closing parenthesis';
-  if (/^Invalid left hand side of assignment/.test(msg)) {
-    return /y/.test(text)
-      ? 'Equations like x² + y² = 4 are not supported yet'
-      : 'Only y = …, name = … or f(x) = … are supported';
-  }
+  if (/^Invalid left hand side of assignment/.test(msg)) return 'Use one "=" per equation, e.g. x^2 + y^2 = 4';
   if (/^Value expected/.test(msg)) return 'Expected a number or expression';
   return msg;
 }
@@ -233,7 +325,7 @@ function analyse(body: AnyNode, locals: Set<string>, defs: Definitions): Analysi
     else if (BUILTIN_CONSTANTS.has(name)) return;
     else if (defs.variables.has(name)) deps.add(name);
     else if (defs.functions.has(name) || ALL_FUNCTION_NAMES.has(name)) fail(`${name} is a function — write ${name}(x)`);
-    else if (name === 'y') fail('y can only appear as "y = …"');
+    else if (name === 'y') fail('y can only be used in an equation or inequality, e.g. y = x^2');
     else fail(`"${name}" is not defined`);
   };
 
@@ -321,6 +413,20 @@ function analyse(body: AnyNode, locals: Set<string>, defs: Definitions): Analysi
 type BodyRow = Extract<ParsedRow, { body: AnyNode }>;
 type DefRow = Extract<ParsedRow, { kind: 'func' } | { kind: 'var' }>;
 
+/** Variables a row's body may use. */
+function localsFor(row: BodyRow): string[] {
+  switch (row.kind) {
+    case 'func':
+      return row.params;
+    case 'var':
+      return [];
+    case 'expr':
+      return ['x'];
+    case 'relation':
+      return row.shape === 'curve' ? ['x'] : row.shape === 'implicit' ? ['x', 'y'] : [];
+  }
+}
+
 /** Builds f^(n) for a prime name like `f__d2`, from whatever `f` is in scope. */
 function primeFunction(primeName: string, globals: Map<string, unknown>): RealFn {
   const [, base, order] = PRIME_NAME.exec(primeName)!;
@@ -391,7 +497,7 @@ export function compileExpressions(sources: readonly ExpressionSource[], options
       results[id] = row;
       continue;
     }
-    const locals = new Set(row.kind === 'func' ? row.params : row.kind === 'expr' ? ['x'] : []);
+    const locals = new Set(localsFor(row));
     try {
       const isValueName = (name: string) =>
         !defs.functions.has(name) && (locals.has(name) || defs.variables.has(name) || BUILTIN_CONSTANTS.has(name));
@@ -500,20 +606,91 @@ function finishRow(row: BodyRow, analysis: Analysis, globals: Map<string, unknow
     const userFn = globals.get(row.name) as (x: number) => number;
     return probeCurve((x) => userFn(x), row.name);
   }
-  // Bare expression or y = …
   const compiled = row.body.compile();
   const scope = new LayeredScope(globals);
-  if (!analysis.usesLocal.has('x') && !row.explicitY) {
-    try {
-      return { kind: 'value', value: toReal(compiled.evaluate(scope)) };
-    } catch (err) {
-      return { kind: 'error', message: runtimeMessage(err) };
+  const constant = (): number => toReal(compiled.evaluate(scope));
+
+  if (row.kind === 'expr') {
+    if (!analysis.usesLocal.has('x')) {
+      try {
+        return { kind: 'value', value: constant() };
+      } catch (err) {
+        return { kind: 'error', message: runtimeMessage(err) };
+      }
     }
+    return probeCurve((x) => {
+      scope.set('x', x);
+      return toReal(compiled.evaluate(scope));
+    });
   }
-  return probeCurve((x) => {
-    scope.set('x', x);
-    return toReal(compiled.evaluate(scope));
-  });
+
+  const inequality = row.op === '=' ? undefined : row.op;
+  switch (row.shape) {
+    case 'curve': {
+      const result = probeCurve((x) => {
+        scope.set('x', x);
+        return toReal(compiled.evaluate(scope));
+      });
+      return result.kind === 'curve' && inequality ? { ...result, inequality } : result;
+    }
+    case 'vline': {
+      let x: number;
+      try {
+        x = constant();
+      } catch (err) {
+        return { kind: 'error', message: runtimeMessage(err) };
+      }
+      if (!Number.isFinite(x)) return { kind: 'error', message: 'x = … must be a finite number' };
+      return { kind: 'vline', x, inequality };
+    }
+    case 'implicit':
+      return finishImplicit((x, y) => {
+        scope.set('x', x);
+        scope.set('y', y);
+        return toReal(compiled.evaluate(scope));
+      }, inequality);
+  }
+}
+
+/**
+ * Builds the result for F(x, y) <op> 0, using an exact representation when
+ * F is a circle, a line, or linear in y; otherwise generic contouring.
+ */
+function finishImplicit(raw: RealFn2, inequality: Comparison | undefined): RowResult {
+  const probe = probeCurve((x) => raw(x, 0.37 * x + 0.21));
+  if (probe.kind === 'error') return probe;
+  const F: RealFn2 = (x, y) => {
+    try {
+      return raw(x, y);
+    } catch {
+      return NaN;
+    }
+  };
+
+  // F op 0 ⇔ y op' g(x) when F = k·(y − g(x)): flip the operator if k < 0.
+  const orient = (k: number): Comparison | undefined =>
+    inequality && (k > 0 ? inequality : (FLIP[inequality] as Comparison));
+
+  const shape = analyzeImplicit(F);
+  switch (shape.type) {
+    case 'line': {
+      const { d, e, f } = shape;
+      if (e !== 0) return { kind: 'curve', fn: (x) => -(d * x + f) / e, inequality: orient(e) };
+      return { kind: 'vline', x: -f / d, inequality: orient(d) };
+    }
+    case 'circle':
+      return { kind: 'implicit', F, circle: shape.circle, inequality };
+    case 'linear-in-y': {
+      const { g, h, hConst } = shape;
+      // An equation can always be solved for y; an inequality only when the
+      // coefficient of y has a fixed sign (otherwise the direction flips).
+      if (!inequality) return { kind: 'curve', fn: (x) => -g(x) / h(x) };
+      if (hConst !== undefined) return { kind: 'curve', fn: (x) => -g(x) / hConst, inequality: orient(hConst) };
+      return { kind: 'implicit', F, inequality };
+    }
+    default:
+      return { kind: 'implicit', F, inequality };
+  }
 }
 
 /**

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { RowResult } from '../math/types';
+import { isPlottable, type RowResult } from '../math/types';
 import { ColorPicker } from './ColorPicker';
 import type { ExpressionItem } from './model';
 
@@ -50,7 +50,7 @@ export function ExpressionRow({
     timer.current = window.setTimeout(() => setSettled(true), ERROR_DELAY_MS);
   };
 
-  const isCurve = result?.kind === 'curve';
+  const isCurve = isPlottable(result);
   const error = result?.kind === 'error' && (!focused || settled) ? result.message : null;
   const value = result?.kind === 'value' ? result.value : null;
 

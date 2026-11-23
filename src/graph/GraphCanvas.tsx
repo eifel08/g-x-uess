@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import type { RealFn } from '../math/types';
+import { projectOntoCircle } from './circle';
 import { nearestOnCurves, nearestPoi } from './hitTest';
+import { snapToImplicit } from './implicit';
+import { preparePlot, type GraphPlot, type PreparedPlot } from './plots';
 import { findPointsOfInterest, type PoiKind, type PointOfInterest } from './poi';
 import { drawScene, type GraphTheme, type MarkedPoint } from './renderer';
-import { sampleCurve, type Polyline } from './sampler';
+import type { Polyline } from './sampler';
 import {
   DEFAULT_VIEWPORT,
   getBounds,
@@ -11,6 +13,7 @@ import {
   toPxX,
   toPxY,
   toWorldX,
+  toWorldY,
   zoomAt,
   type Size,
   type Viewport,
@@ -18,14 +21,9 @@ import {
 import { ZoomControls } from './ZoomControls';
 import './GraphCanvas.css';
 
-export interface GraphCurve {
-  id: string;
-  color: string;
-  fn: RealFn;
-}
-
 interface Props {
-  curves: GraphCurve[];
+  /** Curves, vertical lines, implicit curves and inequality regions to draw. */
+  plots: GraphPlot[];
   /** Detect and show intercepts / intersections. */
   showPointsOfInterest?: boolean;
   /**
@@ -39,14 +37,24 @@ interface Props {
   controls?: ReactNode;
 }
 
-/** A pinned or hovered point: a spot on a curve, or a point of interest. */
-type Pin = { kind: 'curve'; curveId: string; x: number } | { kind: 'poi'; key: string; x: number; y: number };
+/**
+ * A pinned or hovered point:
+ *  - curve: on y = f(x); follows the function as it's edited
+ *  - fixed: an exact point on a vertical line / implicit curve
+ *  - poi:   a point of interest; re-attaches to the recomputed point
+ */
+type Pin =
+  | { kind: 'curve'; curveId: string; x: number }
+  | { kind: 'fixed'; plotId: string; x: number; y: number }
+  | { kind: 'poi'; key: string; x: number; y: number };
 
 interface FrameData {
   view: Viewport;
-  curves: GraphCurve[];
+  plots: GraphPlot[];
   size: Size;
   showPoi: boolean;
+  prepared: PreparedPlot[];
+  /** Stroked polylines per plot id, for hit testing. */
   lines: Map<string, Polyline[]>;
   pois: PointOfInterest[];
 }
@@ -64,7 +72,7 @@ const POI_CAPTION: Record<PoiKind, string> = {
 };
 
 export function GraphCanvas({
-  curves,
+  plots,
   showPointsOfInterest = true,
   activeCurveId = null,
   initialViewport = DEFAULT_VIEWPORT,
@@ -78,7 +86,7 @@ export function GraphCanvas({
   const sizeRef = useRef<Size>({ width: 0, height: 0 });
   const dprRef = useRef(1);
   const themeRef = useRef<GraphTheme | null>(null);
-  const curvesRef = useRef(curves);
+  const plotsRef = useRef(plots);
   const showPoiRef = useRef(showPointsOfInterest);
   const hoverRef = useRef<Pin | null>(null);
   const activeCurveRef = useRef(activeCurveId);
@@ -92,28 +100,33 @@ export function GraphCanvas({
 
   /* ---------------------------- drawing ---------------------------- */
 
-  /** Samples and points of interest for the current view (cached per view/curves). */
+  /** Geometry and points of interest for the current view (cached per view/plots). */
   const getFrame = useCallback((): FrameData => {
     const view = viewRef.current;
     const size = sizeRef.current;
-    const list = curvesRef.current;
+    const list = plotsRef.current;
     const showPoi = showPoiRef.current;
     const cached = frameCache.current;
-    if (cached && cached.view === view && cached.curves === list && cached.size === size && cached.showPoi === showPoi) {
+    if (cached && cached.view === view && cached.plots === list && cached.size === size && cached.showPoi === showPoi) {
       return cached;
     }
     const bounds = getBounds(view, size);
-    const lines = new Map<string, Polyline[]>();
-    for (const c of list) lines.set(c.id, sampleCurve(c.fn, bounds, size));
-    const pois = showPoi ? findPointsOfInterest(list, bounds, size) : [];
-    frameCache.current = { view, curves: list, size, showPoi, lines, pois };
+    const prepared = list.map((p) => preparePlot(p, bounds, size));
+    const lines = new Map(prepared.map((p) => [p.plot.id, p.lines]));
+    let pois: PointOfInterest[] = [];
+    if (showPoi) {
+      const functions = list.flatMap((p) => (p.type === 'function' ? [{ id: p.id, fn: p.fn }] : []));
+      const verticals = list.flatMap((p) => (p.type === 'vline' ? [{ id: p.id, x: p.x }] : []));
+      pois = findPointsOfInterest(functions, bounds, size, {}, verticals);
+    }
+    frameCache.current = { view, plots: list, size, showPoi, prepared, lines, pois };
     return frameCache.current;
   }, []);
 
   /** Points of interest currently shown (and hoverable). */
   const shownPois = useCallback((frame: FrameData): PointOfInterest[] => {
     const focus = [activeCurveRef.current, hoverCurveRef.current].find(
-      (id) => id && frame.curves.some((c) => c.id === id),
+      (id) => id && frame.plots.some((p) => p.id === id),
     );
     if (focus) return frame.pois.filter((p) => p.curveIds.includes(focus));
     return frame.pois.length <= MAX_UNFOCUSED_POIS ? frame.pois : [];
@@ -122,10 +135,14 @@ export function GraphCanvas({
   /** Resolves a pin to concrete coordinates in the current frame (or null). */
   const resolvePin = useCallback((pin: Pin, frame: FrameData): MarkedPoint | null => {
     if (pin.kind === 'curve') {
-      const curve = frame.curves.find((c) => c.id === pin.curveId);
-      if (!curve) return null;
-      const y = curve.fn(pin.x);
-      return Number.isFinite(y) ? { x: pin.x, y, color: curve.color, pinned: false } : null;
+      const plot = frame.plots.find((p) => p.id === pin.curveId);
+      if (plot?.type !== 'function') return null;
+      const y = plot.fn(pin.x);
+      return Number.isFinite(y) ? { x: pin.x, y, color: plot.color, pinned: false } : null;
+    }
+    if (pin.kind === 'fixed') {
+      const plot = frame.plots.find((p) => p.id === pin.plotId);
+      return plot ? { x: pin.x, y: pin.y, color: plot.color, pinned: false, precise: plot.type === 'vline' } : null;
     }
     // Re-attach to the recomputed point of interest nearest the pinned one,
     // so pins follow along when an expression is edited slightly.
@@ -192,7 +209,13 @@ export function GraphCanvas({
       size,
       dpr: dprRef.current,
       theme,
-      curves: frame.curves.map((c) => ({ color: c.color, lines: frame.lines.get(c.id) ?? [] })),
+      curves: frame.prepared.map((p) => ({
+        color: p.plot.color,
+        lines: p.lines,
+        fills: p.fills,
+        fillRule: p.fillRule,
+        dashed: p.dashed,
+      })),
       pois: shownPois(frame).filter((p) => !highlighted.has(`${p.x},${p.y}`)),
       points,
     });
@@ -220,11 +243,11 @@ export function GraphCanvas({
   );
 
   useEffect(() => {
-    curvesRef.current = curves;
+    plotsRef.current = plots;
     showPoiRef.current = showPointsOfInterest;
     activeCurveRef.current = activeCurveId;
     requestDraw();
-  }, [curves, showPointsOfInterest, activeCurveId, requestDraw]);
+  }, [plots, showPointsOfInterest, activeCurveId, requestDraw]);
 
   /* ------------------------ size & theme --------------------------- */
 
@@ -284,7 +307,22 @@ export function GraphCanvas({
       const poi = nearestPoi(shownPois(frame), (x, y) => [toPxX(v, size, x), toPxY(v, size, y)], px, py, radius);
       if (poi) return { kind: 'poi', key: poi.key, x: poi.x, y: poi.y };
       const hit = nearestOnCurves(frame.lines, px, py, radius);
-      return hit ? { kind: 'curve', curveId: hit.curveId, x: toWorldX(v, size, hit.px) } : null;
+      if (!hit) return null;
+      const plot = frame.plots.find((p) => p.id === hit.curveId)!;
+      const hx = toWorldX(v, size, hit.px);
+      const hy = toWorldY(v, size, hit.py);
+      switch (plot.type) {
+        case 'function':
+          return { kind: 'curve', curveId: plot.id, x: hx };
+        case 'vline':
+          return { kind: 'fixed', plotId: plot.id, x: plot.x, y: hy };
+        case 'implicit': {
+          const [x, y] = plot.circle
+            ? projectOntoCircle(plot.circle, hx, hy)
+            : snapToImplicit(plot.F, hx, hy, (2 * radius) / v.scale);
+          return { kind: 'fixed', plotId: plot.id, x, y };
+        }
+      }
     },
     [getFrame, shownPois],
   );
@@ -352,10 +390,18 @@ export function GraphCanvas({
 
   const togglePin = (hit: Pin) => {
     const scale = viewRef.current.scale;
-    const same = (p: Pin) =>
-      hit.kind === 'curve'
-        ? p.kind === 'curve' && p.curveId === hit.curveId && Math.abs(p.x - hit.x) * scale < 12
-        : p.kind === 'poi' && p.key === hit.key && Math.hypot(p.x - hit.x, p.y - hit.y) * scale < 12;
+    const near = (a: { x: number; y?: number }, b: { x: number; y?: number }) =>
+      Math.hypot(a.x - b.x, (a.y ?? 0) - (b.y ?? 0)) * scale < 12;
+    const same = (p: Pin) => {
+      switch (hit.kind) {
+        case 'curve':
+          return p.kind === 'curve' && p.curveId === hit.curveId && Math.abs(p.x - hit.x) * scale < 12;
+        case 'fixed':
+          return p.kind === 'fixed' && p.plotId === hit.plotId && near(p, hit);
+        case 'poi':
+          return p.kind === 'poi' && p.key === hit.key && near(p, hit);
+      }
+    };
     const existing = pinsRef.current.findIndex(same);
     pinsRef.current = existing >= 0 ? pinsRef.current.filter((_, i) => i !== existing) : [...pinsRef.current, hit];
     requestDraw();

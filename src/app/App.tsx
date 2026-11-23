@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ExpressionPanel, useExpressionEditor, useExpressions } from '../expressions';
-import { GraphCanvas, type GraphCurve } from '../graph';
+import { GraphCanvas, type GraphPlot } from '../graph';
 import { Keypad } from '../keypad';
-import { compileExpressions } from '../math';
+import { compileExpressions, type RowResult } from '../math';
 import { GraphSettings, useSettings } from '../settings';
 import './App.css';
 
@@ -22,14 +22,11 @@ export function App() {
     [textKey, angleMode],
   );
 
-  const curves = useMemo<GraphCurve[]>(
-    () =>
-      items.flatMap((item) => {
-        const r = results[item.id];
-        return item.visible && r?.kind === 'curve' ? [{ id: item.id, color: item.color, fn: r.fn }] : [];
-      }),
+  const plots = useMemo<GraphPlot[]>(
+    () => items.flatMap((item) => (item.visible ? toPlot(item.id, item.color, results[item.id]) : [])),
     [items, results],
   );
+
 
   const toggleKeypad = useCallback(() => {
     const open = !keypadOpen;
@@ -65,7 +62,7 @@ export function App() {
       )}
       <main className="app__graph">
         <GraphCanvas
-          curves={curves}
+          plots={plots}
           showPointsOfInterest={settings.showPointsOfInterest}
           activeCurveId={selectedId}
           controls={<GraphSettings settings={settings} onChange={updateSettings} />}
@@ -96,4 +93,18 @@ export function App() {
       )}
     </div>
   );
+}
+
+/** Turns a compiled row into something the graph can draw (or nothing). */
+function toPlot(id: string, color: string, r: RowResult | undefined): GraphPlot[] {
+  switch (r?.kind) {
+    case 'curve':
+      return [{ type: 'function', id, color, fn: r.fn, inequality: r.inequality }];
+    case 'vline':
+      return [{ type: 'vline', id, color, x: r.x, inequality: r.inequality }];
+    case 'implicit':
+      return [{ type: 'implicit', id, color, F: r.F, circle: r.circle, inequality: r.inequality }];
+    default:
+      return [];
+  }
 }
