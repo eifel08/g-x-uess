@@ -315,3 +315,12 @@
     transform: translateY(-2px);
   }
 }
+
+.icon-btn.is-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.icon-btn rect {
+  fill: none;
+}

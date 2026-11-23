@@ -8,6 +8,10 @@ interface Props {
   index: number;
   result: RowResult | undefined;
   inputRef: (el: HTMLInputElement | null) => void;
+  /** While the on-screen keypad is open, suppress the phone's native keyboard. */
+  keypadOpen: boolean;
+  onFocus: () => void;
+  onBlur: () => void;
   onChange: (patch: Partial<Omit<ExpressionItem, 'id'>>) => void;
   onRemove: () => void;
   onEnter: () => void;
@@ -23,6 +27,9 @@ export function ExpressionRow({
   index,
   result,
   inputRef,
+  keypadOpen,
+  onFocus,
+  onBlur,
   onChange,
   onRemove,
   onEnter,
@@ -96,10 +103,17 @@ export function ExpressionRow({
           autoCapitalize="off"
           aria-label={`Expression ${index + 1}`}
           aria-invalid={!!error}
+          inputMode={keypadOpen ? 'none' : 'text'}
           onChange={(e) => handleText(e.target.value)}
           onKeyDown={onKeyDown}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
+          onFocus={() => {
+            setFocused(true);
+            onFocus();
+          }}
+          onBlur={() => {
+            setFocused(false);
+            onBlur();
+          }}
         />
         {error && (
           <div className="expr-row__error" role="status">

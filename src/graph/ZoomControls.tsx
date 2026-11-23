@@ -1,10 +1,13 @@
+import type { ReactNode } from 'react';
+
 interface Props {
+  children?: ReactNode;
   onZoomIn: () => void;
   onZoomOut: () => void;
   onReset: () => void;
 }
 
-export function ZoomControls({ onZoomIn, onZoomOut, onReset }: Props) {
+export function ZoomControls({ onZoomIn, onZoomOut, onReset, children }: Props) {
   return (
     <div className="zoom-controls" role="group" aria-label="Zoom">
       <button type="button" className="zoom-controls__btn" onClick={onZoomIn} aria-label="Zoom in" title="Zoom in">
@@ -22,6 +25,7 @@ export function ZoomControls({ onZoomIn, onZoomOut, onReset }: Props) {
           <path d="M3.5 9.5 10 4l6.5 5.5M5.5 8v8h9V8" />
         </svg>
       </button>
+      {children}
     </div>
   );
 }

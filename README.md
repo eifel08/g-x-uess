@@ -38,18 +38,34 @@ The site is then served at `https://<owner>.github.io/<repo>/`.
 - Grid and tick spacing follow a 1-2-5 sequence and adjust as you zoom. Axis labels stay at the edge when an axis is off-screen, and very large or small values use scientific notation (`2×10⁻⁶`)
 - Adaptive sampling keeps curves smooth. Plotting stops at poles (`1/x`, `tan(x)`) and jumps (`floor(x)`) instead of drawing a vertical line across them, ends neatly at domain edges (`sqrt(x)`), and runs off to infinity where the function does (`ln(x)` at 0)
 - Hovering near a curve shows its coordinates. Clicking or tapping a curve pins a point, and clicking the point again removes it
+- **Points of interest:** x-intercepts, y-intercepts and curve-curve intersections are found automatically and shown as gray dots. Hovering or tapping one shows a callout with its kind and coordinates to 10 significant digits; clicking pins it, and a pinned point follows its curve as you edit. Like Desmos, the dots shown belong to the selected expression or the curve under the mouse. With nothing selected, they appear only when there are 24 or fewer. Poles and jumps are never reported as roots. A curve that oscillates too fast for the current zoom contributes no points, rather than an incomplete set
+- **Settings** (sliders button): radians/degrees for trig functions (a "Degrees" badge shows while active) and a points-of-interest switch. Settings are saved in `localStorage`
 - Light and dark themes follow the system setting
 
 **Expressions**
 - Accepted forms: `y = …`, a bare expression in `x`, functions like `f(x) = …` (other rows can call them), and constants like `a = 3`
-- Functions: `sin cos tan sec csc cot`, their inverses (`asin`/`arcsin`, …), hyperbolic functions, `sqrt cbrt nthRoot exp ln log log2 log10 abs sign floor ceil round mod min max gamma hypot`, `!`
-- Constants: `pi` (or `π`), `e`, `tau`, `phi`
+- Functions: `sin cos tan sec csc cot`, their inverses (`asin`/`arcsin`/`sin⁻¹`/`sin^-1`, …), hyperbolic functions and their inverses, `sqrt cbrt nthRoot exp ln log log2 log10 abs sign floor ceil round mod gcd lcm min max gamma hypot`, `!`
+- Calculus:
+  - `d/dx(x^3)` (also `d/dx sin x`), and prime notation for any one-variable function: `f'(x)`, `f''(x)`, `sin'(x)` (up to 6 primes). Derivatives are computed numerically, using a five-point stencil for first derivatives
+  - Definite integrals `int(t, a, b, expression)` or `∫(t, a, b, …)`, with any variable name and infinite bounds (`∫(t, 0, ∞, e^(-t))`), using adaptive Gauss–Kronrod 7/15
+  - `int(t, 0, x, cos(t))` plots as a function of x
+- Sums and products: `sum(n, 1, 10, n^2)` / `∑`, `prod(n, 1, 5, n)` / `∏` (up to 100,000 terms)
+- Statistics on lists: `mean median stdev stdevp var varp total length min max`, e.g. `mean([1, 2, 3])` or `total([1...100])`. Lists can only appear inside these functions
+- Constants: `pi` (or `π`), `e`, `tau`, `phi`, `∞`; symbols `θ`, `≤ ≥ ≠`; subscripted names like `a_1`
 - Calculator-style shorthand: `2x`, `sin x`, `2 sin x`, `x(x+1)`, `(x+1)(x-1)`, `|x|`, `x²`, `√x`
-- `log` is base 10, `ln` is the natural log, and `log(x, b)` takes any base
+- `log` is base 10, `ln` is the natural log, and a custom base is written `log_2(x)`, `log_{10}(x)` or `log(x, b)`
+- Not supported yet: shaded inequalities in y (`y < x^2`), implicit equations (`x² + y² = 4`) and vertical lines (`x = 3`). Each gets a clear message
 - Rows without `x` show their value, e.g. `f(2)` shows `= 4`
 - Short error messages such as "Missing closing parenthesis", "f takes 1 argument" or "Circular definition". While you are typing they wait for a short pause before appearing, and one broken row never affects the others
 - Each row has a show/hide toggle, a color picker (8 preset colors plus a custom color), and a delete button. Enter adds a row, Backspace on an empty row deletes it, and ↑/↓ move between rows
 - The expression list is saved in `localStorage`
+
+**On-screen math keypad** (keyboard button in the panel header, or **Alt+K**)
+- Docked at the bottom like Desmos. Pressing keys never takes focus away from the expression, so the physical keyboard keeps working alongside it
+- **Main** tab: x y a b θ, a², aᵇ, √, fraction, |a|, parentheses, comparison operators, π e ∞, a number pad, and ←/→, ⌫, ↵ (new row)
+- **Functions** tab, by category: trigonometry, inverse trig, hyperbolic, calculus (d/dx, f′, f″, ∫), series and products (Σ, Π, n!), roots and powers (√ ∛ ⁿ√, superscript, subscript), logs and exponentials (ln, log, logₐ, exp, eˣ, 10ˣ), number functions (abs, floor, ceil, round, sign, mod, gcd, lcm, min, max), and statistics and lists
+- Keys insert clean text and place the cursor where you'd type next: `sqrt(|)`, `int(t, |, , )`. With a selection, keys wrap it: `sqrt(x+1)`. Fraction takes the previous operand as numerator (`1` → `(1)/(|)`), `)` steps over an existing `)`, and ⌫ removes an empty call like `sin()` in one press
+- On phones the keypad has 123 / x y π / f(x) tabs, and the native keyboard is suppressed while it's open
 
 ## Project structure
 
@@ -58,16 +74,26 @@ src/
 ├── app/            App shell and layout (side panel on desktop, bottom sheet on phones)
 ├── math/           Parsing and evaluation (no DOM, no React)
 │   ├── mathInstance.ts   Sandboxed mathjs instance with only the needed functions
-│   ├── preprocess.ts     Converts unicode symbols and |x| to standard syntax
-│   ├── compile.ts        Parses rows, rewrites shorthand, validates, links definitions
+│   ├── preprocess.ts     Converts calculator notation (unicode, |x|, d/dx, f', log_b, …) to mathjs syntax
+│   ├── compile.ts        Parses rows, rewrites shorthand, validates, links definitions, applies angle mode
+│   ├── specialForms.ts   d/dx, ∫, Σ, Π: functions that receive their arguments unevaluated
+│   ├── numeric.ts        Numerical differentiation and adaptive Gauss–Kronrod integration
+│   ├── functions.ts      gcd/lcm, list statistics, ranges, degree-mode trig
+│   ├── scope.ts          Layered evaluation scopes
 │   └── types.ts          RowResult / RealFn: the interface between math and UI
 ├── graph/          Graph engine
 │   ├── viewport.ts       World ↔ screen transforms, pan and zoom math
 │   ├── ticks.ts          Grid spacing and number formatting
 │   ├── sampler.ts        Adaptive curve sampling and discontinuity detection
-│   ├── renderer.ts       Draws a scene on the canvas (grid, labels, curves, points)
-│   └── GraphCanvas.tsx   React component: resizing, pointer/wheel/keyboard input, hit testing
-├── expressions/    Expression list UI and state (reducer, persistence, rows, color picker)
+│   ├── poi.ts            Points of interest: roots, y-intercepts, intersections
+│   ├── hitTest.ts        Nearest curve / point of interest under the pointer
+│   ├── renderer.ts       Draws a scene on the canvas (grid, labels, curves, points, callouts)
+│   └── GraphCanvas.tsx   React component: resizing, pointer/wheel/keyboard input, pins
+├── expressions/    Expression list UI and state (reducer, persistence, rows, color picker),
+│                   editing.ts (pure cursor/template edits) and useExpressionEditor (shared by rows and keypad)
+├── keypad/         On-screen keypad: keys.ts (layout as data) and Keypad.tsx
+├── settings/       Persisted settings (angle mode, points of interest, keypad) and the settings popover
+├── hooks/          Small shared React hooks
 ├── game/           Game logic for Phase 2 (currently: two checks for whether two functions are equal,
 │                   sharing a seeded random number generator in random.ts)
 └── styles/         Global design tokens (CSS variables, light and dark)
@@ -81,6 +107,8 @@ public/             Static assets and web app manifest (Phase 3 builds on these)
 - **Rows are compiled together.** `compileExpressions` takes every row and returns one `RowResult` per row id. Definitions can appear in any order. Duplicate names, cycles, wrong argument counts and undefined names are reported on the row that causes them.
 - **The graph knows nothing about expressions.** `GraphCanvas` receives `{ id, color, fn }` curves, where `fn` is a plain `(x: number) => number`. Phase 2 can draw a hidden target function, or compare a guess against it, without involving the expression UI.
 - **Pan and zoom do not re-render React.** The viewport lives in refs and frames are drawn with `requestAnimationFrame`. Resampling a curve takes about 1 ms (about 3 ms for difficult functions like `sin(1/x)`), so every frame is resampled for full detail.
+- **Points of interest are exact.** Each curve is sampled on a grid about 3 px wide. Sign changes are refined by bisection to full double precision and kept only if the value there is truly near zero, which rules out poles and jumps. Touching zeros such as x² at 0 are found with golden-section search. A second, jittered grid guards against aliasing. Computing points of interest every frame keeps panning at 60 fps.
+- **Angle mode is a compile option.** `compileExpressions(rows, { angleMode: 'deg' })` puts degree-based trig functions into the evaluation scope, so user functions, derivatives and integrals all follow the setting, and sin(180°) is exactly 0.
 - **Relative `base`.** Vite builds with `base: './'`, so the same `dist/` works on static hosting, as a PWA and inside an Android WebView.
 
 ## Roadmap toward Phase 2

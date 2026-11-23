@@ -23,6 +23,16 @@
   --graph-grid-major: #dcdfe4;
   --graph-axis: #4b5563;
   --graph-label: #374151;
+  --graph-poi: #7b818c;
+
+  --accent-soft: #e8eeff;
+  --keypad-bg: #eef0f3;
+  --key-bg: #ffffff;
+  --key-hover: #f7f8fa;
+  --key-active: #e5e8ee;
+  --key-num-bg: #ffffff;
+  --key-op-bg: #e2e5ea;
+  --key-shadow: #c9ced6;
 
   color-scheme: light dark;
 }
@@ -49,6 +59,16 @@
     --graph-grid-major: #2c3038;
     --graph-axis: #a3a9b3;
     --graph-label: #c4c9d1;
+    --graph-poi: #8f96a1;
+
+    --accent-soft: #232c45;
+    --keypad-bg: #121417;
+    --key-bg: #2a2d34;
+    --key-hover: #31353d;
+    --key-active: #3a3f48;
+    --key-num-bg: #30343b;
+    --key-op-bg: #22252b;
+    --key-shadow: #0b0c0e;
   }
 }
 

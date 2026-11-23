@@ -59,15 +59,16 @@ import {
   ceilDependencies,
   roundDependencies,
   fixDependencies,
-  minDependencies,
-  maxDependencies,
   gammaDependencies,
   hypotDependencies,
   piDependencies,
   eDependencies,
   tauDependencies,
   phiDependencies,
+  InfinityDependencies,
 } from 'mathjs';
+import { gcd, lcm, list, listFunctions, logbase, range } from './functions';
+import { specialForms } from './specialForms';
 
 /**
  * A private mathjs instance configured for a graphing calculator.
@@ -146,14 +147,13 @@ export const math = create(
     ceilDependencies,
     roundDependencies,
     fixDependencies,
-    minDependencies,
-    maxDependencies,
     gammaDependencies,
     hypotDependencies,
     piDependencies,
     eDependencies,
     tauDependencies,
     phiDependencies,
+    InfinityDependencies,
   },
   { predictable: true },
 );
@@ -169,6 +169,15 @@ math.import(
     arcsin: Math.asin,
     arccos: Math.acos,
     arctan: Math.atan,
+    logbase,
+    gcd,
+    lcm,
+    ...listFunctions,
+    // Internal names produced by the compiler for [a, b, c] and [a...b].
+    __list: list,
+    __range: range,
+    // d/dx, ∫, Σ, Π: these receive unevaluated arguments (`rawArgs`).
+    ...specialForms,
   },
   { override: true },
 );
@@ -204,12 +213,21 @@ export const BUILTIN_FUNCTIONS = new Set([
   // powers, roots, logs
   'sqrt', 'cbrt', 'nthRoot', 'exp', 'pow', 'ln', 'log', 'log10', 'log2', 'log1p', 'expm1',
   // misc
-  'abs', 'sign', 'floor', 'ceil', 'round', 'fix', 'mod', 'min', 'max',
+  'abs', 'sign', 'floor', 'ceil', 'round', 'fix', 'mod', 'gcd', 'lcm', 'logbase',
   'gamma', 'factorial', 'hypot',
 ]);
 
+/** Functions that accept lists (`mean([1, 2, 3])`) as well as plain arguments. */
+export const LIST_FUNCTIONS = new Set(['mean', 'median', 'stdev', 'stdevp', 'var', 'varp', 'total', 'length', 'min', 'max']);
+
+/** Calculus forms with a bound variable or unevaluated body (see specialForms.ts). */
+export const SPECIAL_FORMS = new Set(['ddx', 'int', 'sum', 'prod']);
+
+/** Every callable name a user can't redefine. */
+export const ALL_FUNCTION_NAMES = new Set([...BUILTIN_FUNCTIONS, ...LIST_FUNCTIONS, ...SPECIAL_FORMS]);
+
 /** Built-in constants. Users cannot redefine these. */
-export const BUILTIN_CONSTANTS = new Set(['pi', 'e', 'tau', 'phi']);
+export const BUILTIN_CONSTANTS = new Set(['pi', 'e', 'tau', 'phi', 'Infinity']);
 
 /** Names that have special meaning in rows (`y = ...`) and can't be defined as functions/variables. */
 export const RESERVED_NAMES = new Set(['x', 'y']);

@@ -65,3 +65,19 @@ export function formatCoord(value: number, scale: number): string {
 function trimZeros(s: string): string {
   return s.includes('.') ? s.replace(/0+$/, '').replace(/\.$/, '') : s;
 }
+
+/**
+ * Formats an exact coordinate (root, intersection) with up to 10 significant
+ * digits. Values that are zero at the current zoom (below a millionth of a
+ * pixel) print as 0, so rounding noise like 1e-17 doesn't show.
+ */
+export function formatPrecise(value: number, scale: number): string {
+  if (!Number.isFinite(value)) return formatCoord(value, scale);
+  if (Math.abs(value) * scale < 1e-6) return '0';
+  const abs = Math.abs(value);
+  const text =
+    abs >= 1e10 || abs < 1e-6
+      ? value.toExponential(8).replace(/\.?0+e/, 'e')
+      : String(Number(value.toPrecision(10)));
+  return text.replace('-', MINUS);
+}

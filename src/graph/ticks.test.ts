@@ -32,3 +32,13 @@ describe('formatCoord', () => {
     expect(formatCoord(Math.PI, 1e5)).toBe('3.141593');
   });
 });
+
+describe('formatPrecise', () => {
+  it('shows up to 10 significant digits and hides rounding noise', async () => {
+    const { formatPrecise } = await import('./ticks');
+    expect(formatPrecise(Math.SQRT2, 50)).toBe('1.414213562');
+    expect(formatPrecise(-2, 50)).toBe('−2');
+    expect(formatPrecise(1e-17, 50)).toBe('0');
+    expect(formatPrecise(1.5e-7, 1e9)).toBe('1.5e−7');
+  });
+});

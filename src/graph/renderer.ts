@@ -1,5 +1,5 @@
 import type { Polyline } from './sampler';
-import { formatCoord, formatTick, gridSpacing, tickIndices } from './ticks';
+import { formatCoord, formatPrecise, formatTick, gridSpacing, tickIndices } from './ticks';
 import { getBounds, toPxX, toPxY, type Size, type Viewport } from './viewport';
 
 export interface GraphTheme {
@@ -8,6 +8,8 @@ export interface GraphTheme {
   majorGrid: string;
   axis: string;
   label: string;
+  /** Points of interest (intercepts, intersections). */
+  poi: string;
   font: string;
 }
 
@@ -22,6 +24,10 @@ export interface MarkedPoint {
   color: string;
   /** Pinned points keep their label; hover points are drawn lighter. */
   pinned: boolean;
+  /** Optional caption above the coordinates, e.g. "x-intercept". */
+  caption?: string;
+  /** Show coordinates at full precision (for exact points like roots). */
+  precise?: boolean;
 }
 
 export interface Scene {
@@ -30,6 +36,9 @@ export interface Scene {
   dpr: number;
   theme: GraphTheme;
   curves: RenderedCurve[];
+  /** Unselected points of interest, drawn as small gray dots. */
+  pois: { x: number; y: number }[];
+  /** Hovered / pinned points, drawn with a callout. */
   points: MarkedPoint[];
 }
 
@@ -44,6 +53,7 @@ export function drawScene(ctx: CanvasRenderingContext2D, scene: Scene) {
 
   drawGrid(ctx, scene);
   drawCurves(ctx, scene);
+  drawPois(ctx, scene);
   drawPoints(ctx, scene);
 }
 
@@ -172,8 +182,19 @@ function drawCurves(ctx: CanvasRenderingContext2D, { curves }: Scene) {
   }
 }
 
+function drawPois(ctx: CanvasRenderingContext2D, { pois, viewport: v, size, theme }: Scene) {
+  ctx.fillStyle = theme.poi;
+  ctx.strokeStyle = theme.background;
+  ctx.lineWidth = 1.5;
+  for (const p of pois) {
+    ctx.beginPath();
+    ctx.arc(toPxX(v, size, p.x), toPxY(v, size, p.y), 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+}
+
 function drawPoints(ctx: CanvasRenderingContext2D, { points, viewport: v, size, theme }: Scene) {
-  ctx.font = `500 13px ${theme.font}`;
   for (const p of points) {
     const px = toPxX(v, size, p.x);
     const py = toPxY(v, size, p.y);
@@ -187,9 +208,15 @@ function drawPoints(ctx: CanvasRenderingContext2D, { points, viewport: v, size, 
     ctx.strokeStyle = theme.background;
     ctx.stroke();
 
-    const text = `(${formatCoord(p.x, v.scale)}, ${formatCoord(p.y, v.scale)})`;
-    const w = ctx.measureText(text).width + 14;
-    const h = 24;
+    const fmt = (n: number) => (p.precise ? formatPrecise(n, v.scale) : formatCoord(n, v.scale));
+    const text = `(${fmt(p.x)}, ${fmt(p.y)})`;
+    ctx.font = `500 13px ${theme.font}`;
+    let w = ctx.measureText(text).width + 14;
+    if (p.caption) {
+      ctx.font = `500 11px ${theme.font}`;
+      w = Math.max(w, ctx.measureText(p.caption).width + 14);
+    }
+    const h = p.caption ? 38 : 24;
     let bx = px + 10;
     let by = py - h - 8;
     if (bx + w > size.width - 4) bx = px - w - 10;
@@ -204,10 +231,16 @@ function drawPoints(ctx: CanvasRenderingContext2D, { points, viewport: v, size, 
     ctx.lineWidth = 1;
     ctx.strokeStyle = p.pinned ? p.color : theme.majorGrid;
     ctx.stroke();
-    ctx.fillStyle = theme.label;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText(text, bx + 7, by + h / 2 + 0.5);
+    if (p.caption) {
+      ctx.font = `500 11px ${theme.font}`;
+      ctx.fillStyle = theme.poi;
+      ctx.fillText(p.caption, bx + 7, by + 11);
+    }
+    ctx.font = `500 13px ${theme.font}`;
+    ctx.fillStyle = theme.label;
+    ctx.fillText(text, bx + 7, by + h - 12 + 0.5);
   }
 }
 
