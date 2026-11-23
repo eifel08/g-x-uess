@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { RealFn2 } from '../math/types';
 import { buildSurfaceMesh, cubeBox } from './mesh';
+import { wheelFactor, zoomDomain } from './zoom';
 
 export interface SurfaceSpec {
   id: string;
@@ -64,6 +65,12 @@ export class Scene3D {
   private domain = 5;
   private resolution: number;
   private theme: Theme3D;
+  private rebuildFrame = 0;
+  private fullResTimer = 0;
+  private touches = new Map<number, { x: number; y: number }>();
+  private cleanup: (() => void)[] = [];
+  /** Called whenever the box size changes (zoom, reset). */
+  onDomainChange?: (domain: number) => void;
 
   constructor(container: HTMLElement, theme: Theme3D, resolution: number) {
     this.theme = theme;
@@ -79,8 +86,11 @@ export class Scene3D {
     this.camera.up.set(0, 0, 1);
     this.controls = new OrbitControls(this.camera, this.canvas);
     this.controls.screenSpacePanning = true;
-    this.controls.zoomSpeed = 1.1;
+    // Zoom changes how much of the graph is shown, not how close the camera
+    // is: wheel and pinch are handled by zoomBy below. Two fingers still pan.
+    this.controls.enableZoom = false;
     this.controls.addEventListener('change', () => this.requestRender());
+    this.listenForZoom();
 
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.55));
     const key = new THREE.DirectionalLight(0xffffff, 1.4);
@@ -103,13 +113,31 @@ export class Scene3D {
     this.requestRender();
   }
 
-  /** Half-size of the box; surfaces are resampled to fill it. */
+  /** Half-size of the box; surfaces are resampled to fill it. Resets the camera. */
   setDomain(domain: number) {
-    if (domain === this.domain) return;
-    this.domain = domain;
-    this.applyDomain();
-    for (const entry of [...this.surfaces.values()]) this.rebuildSurface(entry.spec);
+    this.domain = zoomDomain(domain, 1);
     this.resetView();
+    this.scheduleRebuild(false);
+    this.onDomainChange?.(this.domain);
+  }
+
+  /**
+   * Zooms by `factor` (>1 shows more of the graph). The box keeps its size
+   * on screen while the range of x, y and z it shows grows or shrinks, like
+   * zooming a 2D graph. The camera is scaled by the same factor so the view
+   * (angle and any panning) is preserved.
+   */
+  zoomBy(factor: number) {
+    const next = zoomDomain(this.domain, factor);
+    const k = next / this.domain;
+    if (k === 1) return;
+    this.domain = next;
+    this.camera.position.multiplyScalar(k);
+    this.controls.target.multiplyScalar(k);
+    this.fitCameraLimits();
+    this.controls.update();
+    this.scheduleRebuild(true);
+    this.onDomainChange?.(next);
   }
 
   getDomain() {
@@ -142,14 +170,75 @@ export class Scene3D {
   resetView() {
     const d = this.domain;
     this.camera.position.set(d * 2.3, -d * 2.9, d * 1.9);
+    this.controls.target.set(0, 0, 0);
+    this.fitCameraLimits();
+    this.controls.update();
+    this.requestRender();
+  }
+
+  private fitCameraLimits() {
+    const d = this.domain;
     this.camera.near = d * 0.01;
     this.camera.far = d * 100;
     this.camera.updateProjectionMatrix();
-    this.controls.target.set(0, 0, 0);
     this.controls.minDistance = d * 0.3;
     this.controls.maxDistance = d * 20;
-    this.controls.update();
-    this.requestRender();
+  }
+
+  /**
+   * Rebuilds the box helpers and surfaces for the current domain on the next
+   * frame (coalescing rapid zoom steps). While zooming, a coarser mesh keeps
+   * it smooth; full resolution follows shortly after the gesture stops.
+   */
+  private scheduleRebuild(interactive: boolean) {
+    window.clearTimeout(this.fullResTimer);
+    if (interactive) this.fullResTimer = window.setTimeout(() => this.scheduleRebuild(false), 220);
+    cancelAnimationFrame(this.rebuildFrame);
+    this.rebuildFrame = requestAnimationFrame(() => {
+      this.rebuildFrame = 0;
+      this.applyDomain();
+      const resolution = interactive ? Math.min(this.resolution, 48) : this.resolution;
+      for (const entry of [...this.surfaces.values()]) this.rebuildSurface(entry.spec, resolution);
+      this.renderNow();
+    });
+  }
+
+  /** Wheel / trackpad / two-finger pinch → zoomBy. */
+  private listenForZoom() {
+    const canvas = this.canvas;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      this.zoomBy(wheelFactor(e.deltaY, e.deltaMode, canvas.clientHeight, e.ctrlKey));
+    };
+    const distance = () => {
+      const [a, b] = [...this.touches.values()];
+      return Math.hypot(a.x - b.x, a.y - b.y);
+    };
+    const onDown = (e: PointerEvent) => {
+      if (e.pointerType === 'touch') this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    };
+    const onMove = (e: PointerEvent) => {
+      if (!this.touches.has(e.pointerId)) return;
+      const before = this.touches.size === 2 ? distance() : 0;
+      this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this.touches.size === 2 && before > 0) {
+        const after = distance();
+        if (after > 0) this.zoomBy(before / after); // fingers apart → zoom in
+      }
+    };
+    const onUp = (e: PointerEvent) => this.touches.delete(e.pointerId);
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    canvas.addEventListener('pointerdown', onDown);
+    canvas.addEventListener('pointermove', onMove);
+    canvas.addEventListener('pointerup', onUp);
+    canvas.addEventListener('pointercancel', onUp);
+    this.cleanup.push(() => {
+      canvas.removeEventListener('wheel', onWheel);
+      canvas.removeEventListener('pointerdown', onDown);
+      canvas.removeEventListener('pointermove', onMove);
+      canvas.removeEventListener('pointerup', onUp);
+      canvas.removeEventListener('pointercancel', onUp);
+    });
   }
 
   resize(width: number, height: number) {
@@ -188,6 +277,9 @@ export class Scene3D {
 
   dispose() {
     cancelAnimationFrame(this.frame);
+    cancelAnimationFrame(this.rebuildFrame);
+    window.clearTimeout(this.fullResTimer);
+    this.cleanup.forEach((fn) => fn());
     for (const entry of this.surfaces.values()) this.disposeEntry(entry);
     this.surfaces.clear();
     disposeTree(this.helpers);
@@ -259,12 +351,12 @@ export class Scene3D {
     }
   }
 
-  private rebuildSurface(spec: SurfaceSpec) {
+  private rebuildSurface(spec: SurfaceSpec, resolution = this.resolution) {
     const existing = this.surfaces.get(spec.id);
     if (existing) this.disposeEntry(existing);
 
     const box = cubeBox(this.domain);
-    const built = buildSurfaceMesh(spec.F, box, this.resolution);
+    const built = buildSurfaceMesh(spec.F, box, resolution);
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(built.positions, 3));
     geometry.setIndex(new THREE.BufferAttribute(built.indices, 1));

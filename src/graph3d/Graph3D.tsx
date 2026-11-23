@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ZoomControls } from '../graph/ZoomControls';
 import { Scene3D, type SurfaceSpec, type Theme3D } from './Scene3D';
+import { formatDomain } from './zoom';
 import '../graph/GraphCanvas.css';
 import './Graph3D.css';
 
@@ -10,9 +11,9 @@ interface Props {
   controls?: ReactNode;
 }
 
-/** Half-sizes of the box the − / + buttons step through. */
-const DOMAINS = [1.25, 2.5, 5, 10, 20, 50];
 const DEFAULT_DOMAIN = 5;
+/** Each − / + press shows twice / half as much of the graph. */
+const BUTTON_FACTOR = 2;
 
 interface Hover {
   x: number;
@@ -65,6 +66,10 @@ export default function Graph3D({ surfaces, controls }: Props) {
       return;
     }
     sceneRef.current = scene;
+    scene.onDomainChange = (d) => {
+      setDomain(d);
+      setHover(null); // the point under the cursor moved
+    };
     scene.setSurfaces(surfacesRef.current);
 
     const observer = new ResizeObserver(() => {
@@ -127,14 +132,6 @@ export default function Graph3D({ surfaces, controls }: Props) {
     setHover(null);
   }, [surfaces]);
 
-  useEffect(() => {
-    sceneRef.current?.setDomain(domain);
-  }, [domain]);
-
-  const stepDomain = (dir: 1 | -1) => {
-    const i = DOMAINS.indexOf(domain);
-    setDomain(DOMAINS[Math.min(DOMAINS.length - 1, Math.max(0, i + dir))]);
-  };
 
   return (
     <div className="graph graph3d" ref={containerRef}>
@@ -149,17 +146,14 @@ export default function Graph3D({ surfaces, controls }: Props) {
         </div>
       )}
       <ZoomControls
-        onZoomIn={() => stepDomain(-1)}
-        onZoomOut={() => stepDomain(1)}
-        onReset={() => {
-          if (domain !== DEFAULT_DOMAIN) setDomain(DEFAULT_DOMAIN);
-          else sceneRef.current?.resetView();
-        }}
+        onZoomIn={() => sceneRef.current?.zoomBy(1 / BUTTON_FACTOR)}
+        onZoomOut={() => sceneRef.current?.zoomBy(BUTTON_FACTOR)}
+        onReset={() => sceneRef.current?.setDomain(DEFAULT_DOMAIN)}
       >
         {controls}
       </ZoomControls>
       <div className="graph3d__hint" aria-hidden="true">
-        Drag to rotate · right-drag or two fingers to pan · scroll or pinch to zoom · −/+ resize the box (±{domain})
+        Drag to rotate · right-drag or two fingers to pan · scroll, pinch or −/+ to zoom · showing {formatDomain(domain)}
       </div>
     </div>
   );
