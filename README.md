@@ -24,6 +24,12 @@ npm run preview    # serve the production build
 
 Requires Node 20 or newer (CI uses Node 22).
 
+## Deploying
+
+Every push to `main` runs `.github/workflows/deploy.yml`, which tests and builds the app and publishes `dist/` to
+GitHub Pages. One-time setup: in the repository's **Settings → Pages**, set **Source** to **GitHub Actions**.
+The site is then served at `https://<owner>.github.io/<repo>/`.
+
 ## What works in Phase 1
 
 **Graph**
@@ -62,10 +68,11 @@ src/
 │   ├── renderer.ts       Draws a scene on the canvas (grid, labels, curves, points)
 │   └── GraphCanvas.tsx   React component: resizing, pointer/wheel/keyboard input, hit testing
 ├── expressions/    Expression list UI and state (reducer, persistence, rows, color picker)
-├── game/           Game logic for Phase 2 (currently: two checks for whether two functions are equal)
+├── game/           Game logic for Phase 2 (currently: two checks for whether two functions are equal,
+│                   sharing a seeded random number generator in random.ts)
 └── styles/         Global design tokens (CSS variables, light and dark)
 public/             Static assets and web app manifest (Phase 3 builds on these)
-.github/workflows/  CI: typecheck, test, build
+.github/workflows/  CI (typecheck, test, build) and GitHub Pages deploy from main
 ```
 
 ### Design notes

@@ -1,4 +1,5 @@
 import type { RealFn } from '../math/types';
+import { mulberry32 } from './random';
 
 export interface IntegralEquivalenceOptions {
   /** Number of random intervals to test. */
@@ -119,14 +120,4 @@ function intervalPasses(f: RealFn, g: RealFn, { a, b }: Interval, epsilon: numbe
   // (h/3) · scale. The width w = n · h becomes 3n / scale.
   const w = (3 * n) / scale;
   return diff <= epsilon * (sumF + sumG + w);
-}
-
-function mulberry32(seed: number) {
-  let t = seed >>> 0;
-  return () => {
-    t = (t + 0x6d2b79f5) >>> 0;
-    let r = Math.imul(t ^ (t >>> 15), 1 | t);
-    r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
-    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
-  };
 }
