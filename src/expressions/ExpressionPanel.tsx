@@ -18,6 +18,12 @@ interface Props {
   /** Phones: whether the list is expanded to most of the screen, and how to toggle it. */
   expanded?: boolean;
   onToggleExpanded?: () => void;
+  /** Extra header content next to the logo (the 2D / 3D switch). */
+  headerExtra?: ReactNode;
+  /** Tip shown at the bottom of the panel. */
+  footer?: ReactNode;
+  /** Placeholder for the first, empty row. */
+  placeholder?: string;
   /** Pinned content above the list (the game's `f(x) = ?` row). */
   top?: ReactNode;
   /** Returns a submit handler if this row can be submitted as a guess. */
@@ -39,6 +45,9 @@ export function ExpressionPanel({
   onCollapse,
   expanded = false,
   onToggleExpanded,
+  headerExtra,
+  footer,
+  placeholder,
   top,
   submitFor,
   submitBlockedFor,
@@ -54,6 +63,7 @@ export function ExpressionPanel({
           <span className="brand__paren">)</span>
           <span className="brand__rest">uess</span>
         </h1>
+        {headerExtra}
         <div className="panel__tools">
           <button
             type="button"
@@ -118,6 +128,7 @@ export function ExpressionPanel({
             onEnter={() => editor.addAfter(item.id)}
             onBackspaceEmpty={() => items.length > 1 && editor.remove(item.id)}
             onNavigate={(delta) => editor.focus(items[index + delta]?.id)}
+            placeholder={placeholder}
             onAddSlider={(name) => dispatch({ type: 'add', afterId: item.id, text: `${name} = 1` })}
             onSubmit={submitFor?.(item, results[item.id])}
             submitBlocked={submitBlockedFor?.(item, results[item.id])}
@@ -131,7 +142,11 @@ export function ExpressionPanel({
       </button>
 
       <footer className="panel__hint">
-        Try <code>g(x) = x^3 - 2x</code>, <code>|x|</code>, <code>ln(x)</code>, <code>1/x</code>. Click a curve or a gray point to pin its coordinates. Alt+K opens the keypad.
+        {footer ?? (
+          <>
+            Try <code>g(x) = x^3 - 2x</code>, <code>|x|</code>, <code>ln(x)</code>, <code>1/x</code>. Click a curve or a gray point to pin its coordinates. Alt+K opens the keypad.
+          </>
+        )}
       </footer>
     </aside>
   );

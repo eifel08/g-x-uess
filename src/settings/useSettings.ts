@@ -8,9 +8,11 @@ export interface Settings {
   keypadOpen: boolean;
   /** Phones: the expression list takes most of the screen. */
   panelExpanded: boolean;
+  /** 2D calculator/game or 3D surfaces/game. */
+  mode: '2d' | '3d';
 }
 
-const DEFAULTS: Settings = { angleMode: 'rad', showPointsOfInterest: true, keypadOpen: false, panelExpanded: false };
+const DEFAULTS: Settings = { angleMode: 'rad', showPointsOfInterest: true, keypadOpen: false, panelExpanded: false, mode: '2d' };
 const STORAGE_KEY = 'gxuess.settings.v1';
 
 function load(): Settings {
@@ -21,6 +23,7 @@ function load(): Settings {
       showPointsOfInterest: typeof raw.showPointsOfInterest === 'boolean' ? raw.showPointsOfInterest : DEFAULTS.showPointsOfInterest,
       keypadOpen: typeof raw.keypadOpen === 'boolean' ? raw.keypadOpen : DEFAULTS.keypadOpen,
       panelExpanded: raw.panelExpanded === true,
+      mode: raw.mode === '3d' ? '3d' : '2d',
     };
   } catch {
     return DEFAULTS;

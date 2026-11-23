@@ -66,6 +66,13 @@ export function expressionsReducer(state: ExpressionItem[], action: ExpressionAc
   }
 }
 
+/** Starter rows for the 3D mode. */
+export function defaultExpressions3D(): ExpressionItem[] {
+  const items: ExpressionItem[] = [];
+  for (const text of ['z = (x^2 + y^2)/4 - 2', '']) items.push(createItem(items, text));
+  return items;
+}
+
 export function defaultExpressions(): ExpressionItem[] {
   const items: ExpressionItem[] = [];
   // f is the hidden target in game mode, so the starter example uses g.

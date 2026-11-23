@@ -21,6 +21,7 @@ interface Props {
   onNavigate: (delta: -1 | 1) => void;
   /** Adds a `name = 1` row with a slider, for an undefined variable used here. */
   onAddSlider?: (name: string) => void;
+  placeholder?: string;
   /** Game mode: submit this row as a guess for f(x). Set only when the row can be submitted. */
   onSubmit?: () => void;
   /** Game mode: why this function row can't be submitted (Submit shows disabled). */
@@ -46,6 +47,7 @@ export function ExpressionRow({
   onBackspaceEmpty,
   onNavigate,
   onAddSlider,
+  placeholder = 'Type a guess, e.g. g(x) = 2x + 1',
   onSubmit,
   submitBlocked,
   feedback,
@@ -114,7 +116,7 @@ export function ExpressionRow({
           ref={inputRef}
           className="expr-row__input"
           value={item.text}
-          placeholder={index === 0 ? 'Type a guess, e.g. g(x) = 2x + 1' : ''}
+          placeholder={index === 0 ? placeholder : ''}
           spellCheck={false}
           autoComplete="off"
           autoCorrect="off"

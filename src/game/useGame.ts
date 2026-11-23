@@ -1,19 +1,49 @@
 import { useCallback, useEffect, useMemo, useReducer } from 'react';
-import type { RealFn } from '../math/types';
+import type { RealFn, RealFn2 } from '../math/types';
 import { compileTarget, generateTarget, randomSeed, type Difficulty, type TargetFunction } from './generator';
+import { compileTarget3D, generateTarget3D } from './generator3d';
 import { hintsFor } from './hints';
-import { judgeGuess } from './judge';
+import { hintsFor3D } from './hints3d';
+import { judgeGuess, type GuessResult } from './judge';
+import { judgeGuess3D } from './judge3d';
 import { gameReducer, initialGame, type GameState } from './state';
 
-const STORAGE_KEY = 'gxuess.game.v1';
+/** Everything that differs between the 2D and 3D games. */
+export interface GameKit<Fn> {
+  storageKey: string;
+  generate(difficulty: Difficulty, seed: number): TargetFunction;
+  compile(expression: string): Fn | null;
+  /** Used if a target somehow fails to compile. */
+  fallback: Fn;
+  judge(target: Fn, guess: Fn): GuessResult;
+  hints(target: TargetFunction, fn: Fn): string[];
+}
+
+export const GAME_2D: GameKit<RealFn> = {
+  storageKey: 'gxuess.game.v1',
+  generate: generateTarget,
+  compile: compileTarget,
+  fallback: () => NaN,
+  judge: judgeGuess,
+  hints: hintsFor,
+};
+
+export const GAME_3D: GameKit<RealFn2> = {
+  storageKey: 'gxuess.game3d.v1',
+  generate: generateTarget3D,
+  compile: compileTarget3D,
+  fallback: () => NaN,
+  judge: judgeGuess3D,
+  hints: hintsFor3D,
+};
 
 /**
  * Restores the round in progress. Only (difficulty, seed) and progress are
  * stored, never the formula itself; it's regenerated from the seed.
  */
-function load(): GameState {
+function load(storageKey: string): GameState {
   try {
-    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null') as Partial<GameState> | null;
+    const raw = JSON.parse(localStorage.getItem(storageKey) ?? 'null') as Partial<GameState> | null;
     if (raw && [1, 2, 3, 4, 5].includes(raw.difficulty as number) && Number.isInteger(raw.seed)) {
       return {
         ...initialGame(raw.seed!, raw.difficulty as Difficulty),
@@ -29,40 +59,44 @@ function load(): GameState {
   return initialGame(randomSeed());
 }
 
-export interface Game {
+/** The parts of a game the UI controls need (shared by 2D and 3D). */
+export interface GameControls {
   state: GameState;
   target: TargetFunction;
-  /** The hidden target as a function of x (always compiled in radians). */
-  targetFn: RealFn;
   hints: string[];
   newFunction(difficulty?: Difficulty): void;
-  /** Judges a row's function as a guess for f(x). */
-  submit(rowId: string, text: string, guess: RealFn): void;
   hint(): void;
   reveal(): void;
   toggleTarget(): void;
 }
 
-export function useGame(): Game {
-  const [state, dispatch] = useReducer(gameReducer, undefined, load);
-  const target = useMemo(() => generateTarget(state.difficulty, state.seed), [state.difficulty, state.seed]);
-  const targetFn = useMemo(() => compileTarget(target.expression) ?? (() => NaN), [target]);
-  const hints = useMemo(() => hintsFor(target, targetFn), [target, targetFn]);
+export interface Game<Fn = RealFn> extends GameControls {
+  /** The hidden target as a function (always compiled in radians). */
+  targetFn: Fn;
+  /** Judges a row's function as a guess for f. */
+  submit(rowId: string, text: string, guess: Fn): void;
+}
+
+export function useGameWith<Fn>(kit: GameKit<Fn>): Game<Fn> {
+  const [state, dispatch] = useReducer(gameReducer, kit.storageKey, load);
+  const target = useMemo(() => kit.generate(state.difficulty, state.seed), [kit, state.difficulty, state.seed]);
+  const targetFn = useMemo(() => kit.compile(target.expression) ?? kit.fallback, [kit, target]);
+  const hints = useMemo(() => kit.hints(target, targetFn), [kit, target, targetFn]);
 
   useEffect(() => {
     try {
       const { feedback: _omit, ...persisted } = state;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
+      localStorage.setItem(kit.storageKey, JSON.stringify(persisted));
     } catch {
       // best-effort persistence
     }
-  }, [state]);
+  }, [kit, state]);
 
   const newFunction = useCallback((difficulty?: Difficulty) => dispatch({ type: 'new', seed: randomSeed(), difficulty }), []);
   const submit = useCallback(
-    (rowId: string, text: string, guess: RealFn) =>
-      dispatch({ type: 'submitted', rowId, text, result: judgeGuess(targetFn, guess) }),
-    [targetFn],
+    (rowId: string, text: string, guess: Fn) =>
+      dispatch({ type: 'submitted', rowId, text, result: kit.judge(targetFn, guess) }),
+    [kit, targetFn],
   );
   const hint = useCallback(() => dispatch({ type: 'hint', available: hints.length }), [hints.length]);
   const reveal = useCallback(() => dispatch({ type: 'reveal' }), []);
@@ -70,3 +104,8 @@ export function useGame(): Game {
 
   return { state, target, targetFn, hints, newFunction, submit, hint, reveal, toggleTarget };
 }
+
+/** The 2D game: hidden f(x). */
+export const useGame = () => useGameWith(GAME_2D);
+/** The 3D game: hidden surface z = f(x, y). */
+export const useGame3D = () => useGameWith(GAME_3D);

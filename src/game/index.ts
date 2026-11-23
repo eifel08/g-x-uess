@@ -16,4 +16,7 @@ export { judgeGuess, type GuessResult } from './judge';
 export { gameReducer, initialGame, type GameState, type GameStatus } from './state';
 export { TARGET_COLOR, TARGET_PLOT_ID } from './style';
 export { TargetRow } from './TargetRow';
-export { useGame, type Game } from './useGame';
+export { GAME_2D, GAME_3D, useGame, useGame3D, useGameWith, type Game, type GameControls, type GameKit } from './useGame';
+export { compileTarget3D, generateTarget3D, isGoodTarget3D, VIEW3D } from './generator3d';
+export { hintsFor3D } from './hints3d';
+export { judgeGuess3D } from './judge3d';

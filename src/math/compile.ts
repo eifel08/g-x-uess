@@ -24,7 +24,13 @@ export interface CompileOptions {
    * name from any row (`sin(f(x))`, `f'(x)`, `g(x) = f(x) + 1`). The game uses
    * this for the hidden target f. Rows can't redefine these names.
    */
-  externals?: Record<string, RealFn>;
+  externals?: Record<string, RealFn | RealFn2>;
+  /**
+   * 2 (default): the 2D calculator. 3: surfaces z = F(x, y): `z = …` rows and
+   * bare expressions in x and y become surfaces, and definitions with one
+   * or two parameters are drawn as surfaces too.
+   */
+  dimension?: 2 | 3;
 }
 
 /* ------------------------------------------------------------------------ */
@@ -86,7 +92,7 @@ const FLIP: Record<Relation, Relation> = { '=': '=', '<': '>', '>': '<', '<=': '
  *  - vline:    x <op> body             (x = 3, x > a)   body has no x or y
  *  - implicit: body(x, y) <op> 0       (x² + y² = 4, xy > 1); body = lhs − rhs
  */
-type Shape = 'curve' | 'vline' | 'implicit';
+type Shape = 'curve' | 'vline' | 'implicit' | 'surface';
 
 type ParsedRow =
   | { kind: 'empty' }
@@ -100,7 +106,8 @@ type ParsedRow =
   /** An equation or inequality in x and/or y */
   | { kind: 'relation'; shape: Shape; op: Relation; body: AnyNode };
 
-export function parseRow(text: string): ParsedRow {
+export function parseRow(text: string, dimension: 2 | 3 = 2): ParsedRow {
+  if (dimension === 3) return parseRow3D(text);
   if (text.trim() === '') return { kind: 'empty' };
   let source: string;
   try {
@@ -154,6 +161,61 @@ export function parseRow(text: string): ParsedRow {
     return { kind: 'error', message: 'y can only be used in an equation or inequality, e.g. y = x^2' };
   }
   return { kind: 'expr', body: node };
+}
+
+const SURFACE_HINT = 'In 3D, write surfaces as z = …, e.g. z = x^2 + y^2';
+
+/** 3D rows: `z = …`, bare expressions in x and y, definitions, variables. */
+function parseRow3D(text: string): ParsedRow {
+  if (text.trim() === '') return { kind: 'empty' };
+  let node: AnyNode;
+  try {
+    node = parse(preprocess(text)) as unknown as AnyNode;
+  } catch (err) {
+    // A well-formed equation mathjs can't assign (x² + y² + z² = 4) is an
+    // implicit surface; anything else is an ordinary syntax error.
+    const sides = splitEquation(safePreprocess(text));
+    if (!sides) return { kind: 'error', message: friendlySyntaxError(err) };
+    try {
+      sides.forEach((side) => parse(side));
+    } catch (sideErr) {
+      return { kind: 'error', message: friendlySyntaxError(sideErr) };
+    }
+    return { kind: 'error', message: `Implicit 3D equations aren't supported yet. ${SURFACE_HINT}` };
+  }
+  if (node.type === 'FunctionAssignmentNode') {
+    const name = node.name!;
+    if (RESERVED_NAMES.has(name) || name === 'z' || ALL_FUNCTION_NAMES.has(name)) {
+      return { kind: 'error', message: SURFACE_HINT };
+    }
+    return { kind: 'func', name, params: node.params ?? [], body: node.expr! };
+  }
+  if (node.type === 'AssignmentNode') {
+    if (node.object?.type !== 'SymbolNode') return { kind: 'error', message: SURFACE_HINT };
+    const name = node.object.name!;
+    const body = node.value as AnyNode;
+    if (name === 'z') {
+      if (mentions(body, 'z')) return { kind: 'error', message: `Implicit 3D equations aren't supported yet. ${SURFACE_HINT}` };
+      return { kind: 'relation', shape: 'surface', op: '=', body };
+    }
+    if (name === 'x' || name === 'y') return { kind: 'error', message: SURFACE_HINT };
+    return { kind: 'var', name, body };
+  }
+  if (node.type === 'RelationalNode' || (node.type === 'OperatorNode' && RELATIONAL_OPS[node.fn as string])) {
+    if (['x', 'y', 'z'].some((v) => mentions(node, v))) {
+      return { kind: 'error', message: "Inequalities aren't supported in 3D yet" };
+    }
+  }
+  if (mentions(node, 'z')) return { kind: 'error', message: 'z can only appear as z = …' };
+  return { kind: 'expr', body: node };
+}
+
+function safePreprocess(text: string): string {
+  try {
+    return preprocess(text);
+  } catch {
+    return text;
+  }
 }
 
 /** Classifies `lhs <op> rhs` as a curve, vertical line or implicit relation. */
@@ -420,16 +482,16 @@ type BodyRow = Extract<ParsedRow, { body: AnyNode }>;
 type DefRow = Extract<ParsedRow, { kind: 'func' } | { kind: 'var' }>;
 
 /** Variables a row's body may use. */
-function localsFor(row: BodyRow): string[] {
+function localsFor(row: BodyRow, dimension: 2 | 3): string[] {
   switch (row.kind) {
     case 'func':
       return row.params;
     case 'var':
       return [];
     case 'expr':
-      return ['x'];
+      return dimension === 3 ? ['x', 'y'] : ['x'];
     case 'relation':
-      return row.shape === 'curve' ? ['x'] : row.shape === 'implicit' ? ['x', 'y'] : [];
+      return row.shape === 'curve' ? ['x'] : row.shape === 'implicit' || row.shape === 'surface' ? ['x', 'y'] : [];
   }
 }
 
@@ -449,9 +511,10 @@ function primeFunction(primeName: string, globals: Map<string, unknown>): RealFn
 export function compileExpressions(sources: readonly ExpressionSource[], options: CompileOptions = {}): CompiledRows {
   const { angleMode = 'rad', externals = {} } = options;
   const externalNames = new Set(Object.keys(externals));
+  const dimension = options.dimension ?? 2;
   const results: CompiledRows = {};
   const parsed = new Map<string, ParsedRow>();
-  for (const src of sources) parsed.set(src.id, parseRow(src.text));
+  for (const src of sources) parsed.set(src.id, parseRow(src.text, dimension));
 
   // --- Collect definitions; reject reserved names and duplicates. ---
   const defOwners = new Map<string, string[]>();
@@ -472,7 +535,10 @@ export function compileExpressions(sources: readonly ExpressionSource[], options
       continue;
     }
     if (row.kind === 'func') {
-      const bad = row.params.find((p) => p === 'y' || BUILTIN_CONSTANTS.has(p) || ALL_FUNCTION_NAMES.has(p));
+      // y is a normal parameter in 3D (h(x, y) = …); z never is.
+      const bad = row.params.find(
+        (p) => (dimension === 3 ? p === 'z' : p === 'y') || BUILTIN_CONSTANTS.has(p) || ALL_FUNCTION_NAMES.has(p),
+      );
       if (bad) {
         parsed.set(id, { kind: 'error', message: `"${bad}" can't be a parameter name` });
         continue;
@@ -492,7 +558,7 @@ export function compileExpressions(sources: readonly ExpressionSource[], options
   }
 
   const defs: Definitions = { functions: new Map(), variables: new Set() };
-  for (const name of externalNames) defs.functions.set(name, 1);
+  for (const [name, fn] of Object.entries(externals)) defs.functions.set(name, Math.max(1, fn.length));
   const defRows = new Map<string, { id: string; row: DefRow }>();
   for (const [name, [id]] of defOwners) {
     const row = parsed.get(id) as DefRow;
@@ -509,7 +575,7 @@ export function compileExpressions(sources: readonly ExpressionSource[], options
       results[id] = row;
       continue;
     }
-    const locals = new Set(localsFor(row));
+    const locals = new Set(localsFor(row, dimension));
     try {
       const isValueName = (name: string) =>
         !defs.functions.has(name) && (locals.has(name) || defs.variables.has(name) || BUILTIN_CONSTANTS.has(name));
@@ -607,9 +673,10 @@ export function compileExpressions(sources: readonly ExpressionSource[], options
       results[id] = { kind: 'error', message: `Depends on "${firstBadDep}", which has an error` };
       continue;
     }
-    const result = finishRow(row, analysis, globals);
+    const result = dimension === 3 ? finishRow3D(row, analysis, globals) : finishRow(row, analysis, globals);
     const used = externalsUsed(analysis.deps);
-    results[id] = result.kind === 'curve' && used.length > 0 ? { ...result, usesExternal: used } : result;
+    results[id] =
+      (result.kind === 'curve' || result.kind === 'surface') && used.length > 0 ? { ...result, usesExternal: used } : result;
   }
   return results;
 
@@ -628,6 +695,60 @@ export function compileExpressions(sources: readonly ExpressionSource[], options
     deps.forEach(visit);
     return [...found];
   }
+}
+
+/** 3D: surfaces from `z = …`, bare expressions and definitions; values otherwise. */
+function finishRow3D(row: BodyRow, analysis: Analysis, globals: Map<string, unknown>): RowResult {
+  if (row.kind === 'var') return { kind: 'value', value: globals.get(row.name) as number, name: row.name };
+  if (row.kind === 'func') {
+    const userFn = globals.get(row.name) as (...args: number[]) => number;
+    if (row.params.length === 1) return probeSurface((x) => userFn(x), row.name); // extruded along y
+    if (row.params.length === 2) return probeSurface((x, y) => userFn(x, y), row.name);
+    return { kind: 'definition', name: row.name };
+  }
+  const compiled = row.body.compile();
+  const scope = new LayeredScope(globals);
+  if (row.kind === 'expr' && !analysis.usesLocal.has('x') && !analysis.usesLocal.has('y')) {
+    try {
+      return { kind: 'value', value: toReal(compiled.evaluate(scope)) };
+    } catch (err) {
+      return { kind: 'error', message: runtimeMessage(err) };
+    }
+  }
+  return probeSurface((x, y) => {
+    scope.set('x', x);
+    scope.set('y', y);
+    return toReal(compiled.evaluate(scope));
+  });
+}
+
+/** Like probeCurve, for surfaces. */
+function probeSurface(raw: RealFn2, name?: string): RowResult {
+  let lastError: unknown = null;
+  let anyOk = false;
+  for (const [x, y] of [
+    [0.123, 0.456],
+    [1.7, -2.2],
+    [-2.3, 3.1],
+    [10.5, 0.75],
+  ]) {
+    try {
+      raw(x, y);
+      anyOk = true;
+      break;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  if (!anyOk) return { kind: 'error', message: runtimeMessage(lastError) };
+  const F: RealFn2 = (x, y) => {
+    try {
+      return raw(x, y);
+    } catch {
+      return NaN;
+    }
+  };
+  return { kind: 'surface', F, name };
 }
 
 function finishRow(row: BodyRow, analysis: Analysis, globals: Map<string, unknown>): RowResult {
@@ -676,6 +797,8 @@ function finishRow(row: BodyRow, analysis: Analysis, globals: Map<string, unknow
       if (!Number.isFinite(x)) return { kind: 'error', message: 'x = … must be a finite number' };
       return { kind: 'vline', x, inequality };
     }
+    case 'surface': // only produced in 3D mode
+      return { kind: 'error', message: 'Surfaces need 3D mode' };
     case 'implicit':
       return finishImplicit((x, y) => {
         scope.set('x', x);

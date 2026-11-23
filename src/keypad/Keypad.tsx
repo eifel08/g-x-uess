@@ -5,6 +5,8 @@ import { FUNCTION_GROUPS, NAV_KEYS, NUMBER_KEYS, SYMBOL_KEYS, type KeyDef } from
 import './Keypad.css';
 
 interface Props {
+  /** 3D mode swaps θ for z. */
+  threeD?: boolean;
   onEdit: (edit: Edit) => void;
   onEnter: () => void;
   onClose: () => void;
@@ -17,7 +19,10 @@ type Tab = 'main' | 'symbols' | 'functions';
  * expression input (pointer/mouse down are cancelled), so the cursor and
  * selection survive, and typing on a physical keyboard still works.
  */
-export function Keypad({ onEdit, onEnter, onClose }: Props) {
+const Z_KEY: KeyDef = { label: 'z', title: 'z', action: { kind: 'edit', edit: { type: 'insert', template: 'z' } } };
+
+export function Keypad({ threeD = false, onEdit, onEnter, onClose }: Props) {
+  const symbolKeys = threeD ? SYMBOL_KEYS.map((k) => (k.label === 'θ' ? Z_KEY : k)) : SYMBOL_KEYS;
   const narrow = useMediaQuery('(max-width: 640px)');
   const [tab, setTab] = useState<Tab>('main');
   // On wide screens symbols and numbers share one tab.
@@ -84,7 +89,7 @@ export function Keypad({ onEdit, onEnter, onClose }: Props) {
             <>
               {(!narrow || current === 'symbols') && (
                 <div className="keypad__grid keypad__grid--symbols">
-                  {SYMBOL_KEYS.map((k) => (
+                  {symbolKeys.map((k) => (
                     <Key key={k.title} def={k} onPress={press} />
                   ))}
                 </div>

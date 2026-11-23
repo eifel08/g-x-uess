@@ -50,6 +50,29 @@ Guesses are judged by numeric equivalence, so any algebraically equal form wins:
 
 The round in progress (difficulty, seed, tries, hints) is saved in `localStorage`. The formula itself is never stored; it's regenerated from the seed.
 
+## 3D mode
+
+The **2D / 3D** switch in the sidebar header opens a separate 3D workspace with its own expressions and its own game round (both saved).
+
+- **Surfaces:** `z = x^2 - y^2`, bare expressions in x and y (`sin(x) + cos(y)`), two-variable definitions `h(x, y) = …` (drawn as surfaces), and one-variable definitions `g(x) = …` (extruded along y). Everything else works as in 2D: the function library, `pi`/`e`, sliders, `d/dx`, and radians/degrees. Inequalities, implicit 3D equations (`x^2 + y^2 + z^2 = 4`) and `y = …` rows get clear messages instead.
+- **View:** a box with colored x/y/z axes, tick labels and a grid on z = 0. Drag to rotate, right-drag or two fingers to pan, scroll or pinch to zoom. −/+ resize the box (±1.25 … ±50), and home resets it. Hovering a surface shows (x, y, z), with z read exactly from the function.
+- **Robustness:** undefined points leave holes, and surfaces are cut exactly at the box faces with clipping planes. A triangle is dropped when one of its edges jumps much more than the grid explains, judged by evaluating F at the edge's midpoint. So poles like `1/(x - y)` and `tan(x)` split cleanly instead of drawing walls of spikes, while steep but continuous surfaces like `e^x` stay intact.
+- **Performance:** meshes are 100 × 100 cells on desktop and 64 × 64 on small screens. They're rebuilt only when a surface, its color or the box changes; camera moves just re-render, and nothing redraws while idle. Every geometry, material and texture is disposed when replaced or unmounted. three.js is loaded only when 3D mode is opened, so the 2D app doesn't download it.
+
+### The 3D game
+
+It works exactly like 2D. `f(x, y) = ?` is pinned at the top with its own show/hide toggle, a 1–5 difficulty selector, hints, give up, and tries. The hidden surface is gold, glowing and slightly translucent, with a floating **TARGET f(x, y)** badge; user surfaces never use that style. Rows can call `f(x, y)` for exploration, but such rows can't be submitted.
+
+| Difficulty | Surfaces |
+| --- | --- |
+| 1 | planes `ax + by + c`, paraboloids `(x^2 + y^2)/d + c`, simple quadratics |
+| 2 | shifted/elliptic paraboloids, saddles `x^2 - y^2`, `x y`, cones `sqrt(x^2 + y^2)`, `|x| + |y|`, roots |
+| 3 | `sin(x) + cos(y)`, radial waves `sin(sqrt(x^2 + y^2))`, cubics, Gaussian bumps, `ln(x^2 + y^2 + c)` |
+| 4 | products `sin(x)cos(y)`, ratios `4/(1 + x^2 + y^2)`, scaled radial waves, multi-term polynomials, combined forms |
+| 5 | modulated waves, localized peaks/dips (sums of Gaussians), compositions `sin(x + sin(y))`, subtle multi-parameter combinations |
+
+Every generated surface must depend on both x and y, be mostly defined and inside the default box, and not be flat. Guesses are checked numerically at 300 random points in each of the squares ±5, ±1, ±50 and ±500, with the same domain rules as 2D. A miss gets feedback such as "above f by 2 everywhere", "stretched by a factor of 3", "upside down", "shifted by 1 in the −x direction", domain differences, or "% of the surface in view matches". Hints: the family, f(0, 0), symmetry (radial, x↔y, even/odd), and the highest point in view.
+
 ## What works in Phase 1
 
 **Graph**
@@ -100,7 +123,7 @@ The round in progress (difficulty, seed, tries, hints) is saved in `localStorage
 
 ```
 src/
-├── app/            App shell and layout (side panel on desktop, bottom sheet on phones)
+├── app/            App shell: 2D/3D switch, Workspace2D / Workspace3D, shared layout (side panel on desktop, bottom sheet on phones)
 ├── math/           Parsing and evaluation (no DOM, no React)
 │   ├── mathInstance.ts   Sandboxed mathjs instance with only the needed functions
 │   ├── preprocess.ts     Converts calculator notation (unicode, |x|, d/dx, f', log_b, …) to mathjs syntax
@@ -124,15 +147,18 @@ src/
 │   └── GraphCanvas.tsx   React component: resizing, pointer/wheel/keyboard input, pins
 ├── expressions/    Expression list UI and state (reducer, persistence, rows, color picker),
 │                   editing.ts (pure cursor/template edits) and useExpressionEditor (shared by rows and keypad)
+├── graph3d/        3D view: mesh.ts (pure surface triangulation), Scene3D.ts (three.js scene), Graph3D.tsx (lazy React view)
 ├── keypad/         On-screen keypad: keys.ts (layout as data) and Keypad.tsx
 ├── settings/       Persisted settings (angle mode, points of interest, keypad) and the settings popover
 ├── hooks/          Small shared React hooks
 ├── game/           Game mode
-│   ├── generator.ts      Seeded target generator per difficulty, with visibility/degeneracy checks
+│   ├── generator.ts      Seeded 2D target generator per difficulty, with visibility/degeneracy checks
+│   ├── generator3d.ts, judge3d.ts, hints3d.ts   The 3D game's counterparts
+│   ├── format.ts         Shared builders for clean calculator syntax
 │   ├── judge.ts          Equivalence verdict and non-spoiling feedback on misses
 │   ├── hints.ts          Progressive hints (family, f(0), symmetry, zeros)
 │   ├── state.ts          Pure round reducer (attempts, status, visibility, feedback)
-│   ├── useGame.ts        React hook: randomness, persistence, compiled target
+│   ├── useGame.ts        React hook shared by both modes (a "kit" per mode): randomness, persistence, compiled target
 │   ├── TargetRow.tsx     The pinned `f(x) = ?` row (eye toggle, difficulty, hints, result)
 │   └── equivalence.ts, integralEquivalence.ts, random.ts   Function comparison and seeded RNG
 └── styles/         Global design tokens (CSS variables, light and dark)

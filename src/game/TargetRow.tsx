@@ -1,4 +1,4 @@
-import type { Game } from './useGame';
+import type { GameControls } from './useGame';
 import { DIFFICULTIES } from './generator';
 import { TARGET_COLOR } from './style';
 import './TargetRow.css';
@@ -7,7 +7,7 @@ import './TargetRow.css';
  * The pinned `f(x) = ?` entry at the top of the sidebar: visibility toggle,
  * difficulty 1–5, new function, hints, give up, and the result of the round.
  */
-export function TargetRow({ game }: { game: Game }) {
+export function TargetRow({ game, label = 'f(x)' }: { game: GameControls; label?: string }) {
   const { state, target, hints } = game;
   const playing = state.status === 'playing';
   const solved = state.status === 'won';
@@ -15,7 +15,7 @@ export function TargetRow({ game }: { game: Game }) {
   return (
     <section
       className={`target-row${solved ? ' is-won' : ''}${state.status === 'revealed' ? ' is-revealed' : ''}`}
-      aria-label="Hidden function f(x)"
+      aria-label={`Hidden function ${label}`}
       style={{ '--target': TARGET_COLOR } as React.CSSProperties}
     >
       <div className="target-row__main">
@@ -23,8 +23,8 @@ export function TargetRow({ game }: { game: Game }) {
           type="button"
           className={`target-row__eye${state.targetVisible ? '' : ' is-off'}`}
           aria-pressed={state.targetVisible}
-          aria-label={state.targetVisible ? 'Hide f(x) on the graph' : 'Show f(x) on the graph'}
-          title={state.targetVisible ? 'Hide f(x)' : 'Show f(x)'}
+          aria-label={state.targetVisible ? `Hide ${label} on the graph` : `Show ${label} on the graph`}
+          title={state.targetVisible ? `Hide ${label}` : `Show ${label}`}
           onClick={game.toggleTarget}
         >
           {state.targetVisible ? (
@@ -41,7 +41,7 @@ export function TargetRow({ game }: { game: Game }) {
         </button>
 
         <div className="target-row__formula" data-testid="target-formula">
-          <span className="target-row__name">f(x) =</span>{' '}
+          <span className="target-row__name">{label} =</span>{' '}
           {playing ? <span className="target-row__hidden">?</span> : <span className="target-row__answer">{target.expression}</span>}
         </div>
 
@@ -59,7 +59,7 @@ export function TargetRow({ game }: { game: Game }) {
                 <path d="M7.5 15.5h5M8 18h4M10 2.5a5.5 5.5 0 0 0-3.2 10c.5.4.7.9.7 1.5v.5h5V14c0-.6.2-1.1.7-1.5A5.5 5.5 0 0 0 10 2.5Z" />
               </svg>
             </button>
-            <button type="button" className="icon-btn" onClick={game.reveal} aria-label="Give up and reveal f(x)" title="Give up and reveal f(x)">
+            <button type="button" className="icon-btn" onClick={game.reveal} aria-label={`Give up and reveal ${label}`} title={`Give up and reveal ${label}`}>
               <svg viewBox="0 0 20 20" aria-hidden="true">
                 <path d="M4.5 18V3M4.5 3.5h10l-2.5 4 2.5 4h-10" />
               </svg>

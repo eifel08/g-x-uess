@@ -3,12 +3,12 @@ import { defaultExpressions, expressionsReducer, type ExpressionItem } from './m
 
 const STORAGE_KEY = 'gxuess.expressions.v1';
 
-function load(): ExpressionItem[] {
+function load({ storageKey, defaults }: { storageKey: string; defaults: () => ExpressionItem[] }): ExpressionItem[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return defaultExpressions();
+    const raw = localStorage.getItem(storageKey);
+    if (!raw) return defaults();
     const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed) || parsed.length === 0) return defaultExpressions();
+    if (!Array.isArray(parsed) || parsed.length === 0) return defaults();
     const valid = parsed.filter(
       (i): i is ExpressionItem =>
         i && typeof i.id === 'string' && typeof i.text === 'string' && typeof i.color === 'string' && typeof i.visible === 'boolean',
@@ -18,21 +18,21 @@ function load(): ExpressionItem[] {
       const s = item.slider;
       if (s && !(Number.isFinite(s.min) && Number.isFinite(s.max) && s.step > 0 && s.max > s.min)) delete item.slider;
     }
-    return valid.length > 0 ? valid : defaultExpressions();
+    return valid.length > 0 ? valid : defaults();
   } catch {
-    return defaultExpressions();
+    return defaults();
   }
 }
 
 /** Expression list state, persisted to localStorage per browser. */
-export function useExpressions() {
-  const [items, dispatch] = useReducer(expressionsReducer, undefined, load);
+export function useExpressions(storageKey = STORAGE_KEY, defaults: () => ExpressionItem[] = defaultExpressions) {
+  const [items, dispatch] = useReducer(expressionsReducer, { storageKey, defaults }, load);
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+      localStorage.setItem(storageKey, JSON.stringify(items));
     } catch {
       // Storage can be unavailable (private mode, quota); persistence is best-effort.
     }
-  }, [items]);
+  }, [items, storageKey]);
   return [items, dispatch] as const;
 }

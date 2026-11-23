@@ -62,6 +62,11 @@ export type RowResult =
    * drawn from its geometry.
    */
   | { kind: 'implicit'; F: RealFn2; circle?: Circle; inequality?: Comparison }
+  /**
+   * 3D mode: the surface z = F(x, y). Rows `z = …`, bare expressions in x and
+   * y, and function definitions (`g(x)` is extruded along y).
+   */
+  | { kind: 'surface'; F: RealFn2; name?: string; usesExternal?: string[] }
   /** A constant expression (`2+3`, `f(1)`) or variable definition (`a = 3`). */
   | { kind: 'value'; value: number; name?: string }
   /** A definition that is valid but not drawable, e.g. `h(a, b) = a + b`. */
@@ -70,5 +75,7 @@ export type RowResult =
 export type CompiledRows = Record<string, RowResult>;
 
 /** Rows that draw something on the graph. */
-export const isPlottable = (r: RowResult | undefined): r is Extract<RowResult, { kind: 'curve' | 'vline' | 'implicit' }> =>
-  r?.kind === 'curve' || r?.kind === 'vline' || r?.kind === 'implicit';
+export const isPlottable = (
+  r: RowResult | undefined,
+): r is Extract<RowResult, { kind: 'curve' | 'vline' | 'implicit' | 'surface' }> =>
+  r?.kind === 'curve' || r?.kind === 'vline' || r?.kind === 'implicit' || r?.kind === 'surface';

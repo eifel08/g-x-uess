@@ -118,3 +118,16 @@
     transform: rotate(-90deg);
   }
 }
+
+.mode-switch {
+  margin-left: 10px;
+  margin-right: auto;
+}
+
+.app__loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+}
