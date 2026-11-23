@@ -92,7 +92,7 @@
 
 .expr-row {
   display: grid;
-  grid-template-columns: 44px 1fr auto;
+  grid-template-columns: 44px 1fr auto auto;
   align-items: start;
   border-bottom: 1px solid var(--border);
   position: relative;
@@ -323,4 +323,36 @@
 
 .icon-btn rect {
   fill: none;
+}
+
+/* ------------------------------ game mode ------------------------------ */
+
+.expr-row__submit {
+  align-self: start;
+  margin-top: 9px;
+  padding: 5px 10px;
+  border: 1px solid color-mix(in srgb, var(--game-target) 70%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--game-target) 12%, var(--surface));
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.expr-row__submit:hover {
+  background: color-mix(in srgb, var(--game-target) 28%, var(--surface));
+}
+
+.expr-row__feedback {
+  font-size: 12.5px;
+  padding: 0 4px 7px 0;
+  color: var(--warning);
+  animation: fade-in 0.18s ease-out;
+}
+
+.expr-row__feedback.is-correct {
+  color: var(--success);
+  font-weight: 600;
 }

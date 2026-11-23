@@ -22,6 +22,10 @@ export interface RenderedCurve {
   fillRule?: CanvasFillRule;
   /** Dashed stroke (strict inequalities). */
   dashed?: boolean;
+  /** Soft halo under the stroke (reserved for the game's target f(x)). */
+  glow?: boolean;
+  /** Small floating label drawn on the curve, e.g. "f(x)". */
+  badge?: string;
 }
 
 export interface MarkedPoint {
@@ -62,6 +66,7 @@ export function drawScene(ctx: CanvasRenderingContext2D, scene: Scene) {
   drawGrid(ctx, scene);
   drawRegions(ctx, scene);
   drawCurves(ctx, scene);
+  drawBadges(ctx, scene);
   drawPois(ctx, scene);
   drawPoints(ctx, scene);
 }
@@ -197,6 +202,22 @@ function drawCurves(ctx: CanvasRenderingContext2D, { curves }: Scene) {
   ctx.lineWidth = CURVE_WIDTH;
   ctx.lineJoin = 'round';
   for (const curve of curves) {
+    if (curve.glow) {
+      // Halo: a wide translucent stroke underneath, then a slightly bolder line.
+      ctx.save();
+      ctx.strokeStyle = curve.color;
+      ctx.globalAlpha = 0.28;
+      ctx.lineWidth = 10;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      for (const line of curve.lines) {
+        ctx.moveTo(line[0], line[1]);
+        for (let i = 2; i < line.length; i += 2) ctx.lineTo(line[i], line[i + 1]);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+    ctx.lineWidth = curve.glow ? CURVE_WIDTH + 0.75 : CURVE_WIDTH;
     ctx.strokeStyle = curve.color;
     ctx.lineCap = curve.dashed ? 'butt' : 'round';
     ctx.setLineDash(curve.dashed ? [9, 6] : []);
@@ -208,6 +229,43 @@ function drawCurves(ctx: CanvasRenderingContext2D, { curves }: Scene) {
     ctx.stroke();
   }
   ctx.setLineDash([]);
+}
+
+/**
+ * Draws each curve's badge at a visible point toward the right of the view,
+ * nudged off the curve so it doesn't hide it.
+ */
+function drawBadges(ctx: CanvasRenderingContext2D, { curves, size, theme }: Scene) {
+  for (const curve of curves) {
+    if (!curve.badge) continue;
+    let best: [number, number] | null = null;
+    for (const line of curve.lines) {
+      for (let i = 0; i < line.length; i += 2) {
+        const x = line[i];
+        const y = line[i + 1];
+        if (x < 40 || x > size.width - 90 || y < 30 || y > size.height - 30) continue;
+        if (!best || x > best[0]) best = [x, y];
+      }
+    }
+    if (!best) continue;
+    ctx.font = `italic 600 13px ${theme.font}`;
+    const w = ctx.measureText(curve.badge).width + 14;
+    const h = 22;
+    const bx = best[0] - w / 2;
+    const by = best[1] - h - 10;
+    ctx.save();
+    ctx.shadowColor = curve.color;
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, w, h, 11);
+    ctx.fillStyle = curve.color;
+    ctx.fill();
+    ctx.restore();
+    ctx.fillStyle = '#2b1d00';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(curve.badge, bx + w / 2, by + h / 2 + 0.5);
+  }
 }
 
 function drawPois(ctx: CanvasRenderingContext2D, { pois, viewport: v, size, theme }: Scene) {

@@ -15,6 +15,9 @@
   --border-strong: #c9ced6;
   --danger: #ce2c31;
   --danger-soft: #feebec;
+  --success: #18794e;
+  --warning: #a35200;
+  --game-target: #f5a524;
   --shadow-sm: 0 1px 2px rgb(16 24 40 / 0.08);
   --shadow-lg: 0 10px 30px rgb(16 24 40 / 0.16);
 
@@ -51,6 +54,8 @@
     --border-strong: #4a4f59;
     --danger: #ff6369;
     --danger-soft: #3b1d20;
+    --success: #3dd68c;
+    --warning: #ffb224;
     --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
     --shadow-lg: 0 10px 30px rgb(0 0 0 / 0.5);
 

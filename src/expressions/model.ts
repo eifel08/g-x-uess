@@ -64,6 +64,7 @@ export function expressionsReducer(state: ExpressionItem[], action: ExpressionAc
 
 export function defaultExpressions(): ExpressionItem[] {
   const items: ExpressionItem[] = [];
-  for (const text of ['f(x) = x^2/4 - 2', 'y = sin(x)', 'tan(x)/4', '']) items.push(createItem(items, text));
+  // f is the hidden target in game mode, so the starter example uses g.
+  for (const text of ['g(x) = x^2', '']) items.push(createItem(items, text));
   return items;
 }

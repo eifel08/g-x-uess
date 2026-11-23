@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ExpressionPanel, useExpressionEditor, useExpressions } from '../expressions';
+import { ExpressionPanel, useExpressionEditor, useExpressions, type ExpressionItem } from '../expressions';
+import { TARGET_COLOR, TARGET_PLOT_ID, TargetRow, useGame } from '../game';
 import { GraphCanvas, type GraphPlot } from '../graph';
 import { Keypad } from '../keypad';
 import { compileExpressions, type RowResult } from '../math';
@@ -22,11 +23,33 @@ export function App() {
     [textKey, angleMode],
   );
 
-  const plots = useMemo<GraphPlot[]>(
-    () => items.flatMap((item) => (item.visible ? toPlot(item.id, item.color, results[item.id]) : [])),
-    [items, results],
-  );
+  const game = useGame();
+  const { targetFn } = game;
+  const targetVisible = game.state.targetVisible;
 
+  const plots = useMemo<GraphPlot[]>(() => {
+    const userPlots = items.flatMap((item) => (item.visible ? toPlot(item.id, item.color, results[item.id]) : []));
+    if (!targetVisible) return userPlots;
+    // The target is drawn first so player curves sit on top of its glow.
+    const target: GraphPlot = {
+      type: 'function',
+      id: TARGET_PLOT_ID,
+      color: TARGET_COLOR,
+      fn: targetFn,
+      emphasis: 'target',
+      label: 'f(x)',
+    };
+    return [target, ...userPlots];
+  }, [items, results, targetFn, targetVisible]);
+
+  // Any plain function-of-x row can be submitted as a guess while a round is on.
+  const submitFor = (item: ExpressionItem, r: RowResult | undefined) =>
+    game.state.status === 'playing' && r?.kind === 'curve' && !r.inequality
+      ? () => game.submit(item.id, item.text, r.fn)
+      : undefined;
+  const feedback = game.state.feedback;
+  const feedbackFor = (item: ExpressionItem) =>
+    feedback && feedback.rowId === item.id && feedback.text === item.text ? feedback.result : undefined;
 
   const toggleKeypad = useCallback(() => {
     const open = !keypadOpen;
@@ -58,6 +81,9 @@ export function App() {
           onToggleKeypad={toggleKeypad}
           onSelect={setSelectedId}
           onCollapse={() => setPanelOpen(false)}
+          top={<TargetRow game={game} />}
+          submitFor={submitFor}
+          feedbackFor={feedbackFor}
         />
       )}
       <main className="app__graph">

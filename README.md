@@ -7,7 +7,7 @@ The game is being built in phases:
 | Phase | Scope | Status |
 | --- | --- | --- |
 | **1** | Project foundation and a 2D graphing calculator in the style of Desmos | ✅ current |
-| 2 | Guessing-game mechanics: hidden function, guesses, hints, scoring | planned |
+| 2 | Guessing-game mechanics: hidden function, guesses, hints, scoring | ✅ game mode (see below) |
 | 3 | Installable PWA (offline, home-screen install) | planned |
 | 4 | Android APK (Capacitor wrapper around the same web build) | planned |
 
@@ -29,6 +29,26 @@ Requires Node 20 or newer (CI uses Node 22).
 Every push to `main` runs `.github/workflows/deploy.yml`, which tests and builds the app and publishes `dist/` to
 GitHub Pages. One-time setup: in the repository's **Settings → Pages**, set **Source** to **GitHub Actions**.
 The site is then served at `https://<owner>.github.io/<repo>/`.
+
+## How to play
+
+A hidden function is pinned at the top of the sidebar as **`f(x) = ?`**, drawn on the graph in gold with a glow and an `f(x)` badge.
+
+1. Pick a **difficulty from 1 to 5**. Each choice (and **New function**) generates a fresh random target:
+   1. linear and simple quadratics: `2x - 3`, `x^2 + 4`, `(x - 2)^2`
+   2. vertex/factored quadratics, `|x - h| + k`, `sqrt(x - h)`, `a/(x - h) + k`
+   3. `a·sin(bx) + c`, exponentials, logarithms, cubics
+   4. rational functions with asymptotes, damped and shifted trig, multi-term polynomials, combined forms
+   5. compositions (`e^(sin x)`, `ln(x^2 + a)`), products and ratios (`x sin(x)/2`, `sin(x)/x`), non-trivial phase and frequency, subtle transformations
+2. Explore with the calculator as usual. The eye button shows or hides f(x). Hovering f(x) shows coordinates, and its intercepts and intersections with your curves appear as points of interest.
+3. When a row holds a function of x (`y = …`, `g(x) = …` or a bare expression), press its **Submit** button to submit it as your guess. There's no separate guess box.
+   - **Match:** you win, the formula is revealed and the number of tries is shown, with a **New function** button.
+   - **Miss:** a short note on that row explains how it differs, without giving the answer away. For example: "Right shape! It's shifted right by 2", "above f(x) by 3 everywhere", "stretched vertically by a factor of 2", "upside down", domain differences, or "62% of the visible graph matches".
+4. **Hints** (light bulb) reveal, one at a time: the function family, f(0), symmetry (even/odd), then where f crosses the x-axis. **Give up** (flag) reveals f(x).
+
+Guesses are judged by numeric equivalence, so any algebraically equal form wins: `(x - 2)(x + 3)` matches `x^2 + x - 6`. Both functions are sampled on [−10, 10], [−1, 1], [−100, 100] and [−1000, 1000]. Points where both are undefined agree; points where only one is defined don't, so domain restrictions count: `sqrt(x)^2` ≠ `x`.
+
+The round in progress (difficulty, seed, tries, hints) is saved in `localStorage`. The formula itself is never stored; it's regenerated from the seed.
 
 ## What works in Phase 1
 
@@ -105,8 +125,14 @@ src/
 ├── keypad/         On-screen keypad: keys.ts (layout as data) and Keypad.tsx
 ├── settings/       Persisted settings (angle mode, points of interest, keypad) and the settings popover
 ├── hooks/          Small shared React hooks
-├── game/           Game logic for Phase 2 (currently: two checks for whether two functions are equal,
-│                   sharing a seeded random number generator in random.ts)
+├── game/           Game mode
+│   ├── generator.ts      Seeded target generator per difficulty, with visibility/degeneracy checks
+│   ├── judge.ts          Equivalence verdict and non-spoiling feedback on misses
+│   ├── hints.ts          Progressive hints (family, f(0), symmetry, zeros)
+│   ├── state.ts          Pure round reducer (attempts, status, visibility, feedback)
+│   ├── useGame.ts        React hook: randomness, persistence, compiled target
+│   ├── TargetRow.tsx     The pinned `f(x) = ?` row (eye toggle, difficulty, hints, result)
+│   └── equivalence.ts, integralEquivalence.ts, random.ts   Function comparison and seeded RNG
 └── styles/         Global design tokens (CSS variables, light and dark)
 public/             Static assets and web app manifest (Phase 3 builds on these)
 .github/workflows/  CI (typecheck, test, build) and GitHub Pages deploy from main
@@ -125,9 +151,8 @@ public/             Static assets and web app manifest (Phase 3 builds on these)
 - **Angle mode is a compile option.** `compileExpressions(rows, { angleMode: 'deg' })` puts degree-based trig functions into the evaluation scope, so user functions, derivatives and integrals all follow the setting, and sin(180°) is exactly 0.
 - **Relative `base`.** Vite builds with `base: './'`, so the same `dist/` works on static hosting, as a PWA and inside an Android WebView.
 
-## Roadmap toward Phase 2
+## Function equivalence checks
 
-- `game/`: puzzle definitions (hidden function, difficulty, allowed tools), round state, scoring, hints
 - Two checks for whether a guess matches the hidden function (e.g. `2(x+1)` vs `2x+2`):
   - `game/equivalence.ts` (`compareFunctions`) compares values at 256 points in [−10, 10]
   - `game/integralEquivalence.ts` (`compareFunctionsByIntegral`) tests 256 random intervals [a, b] of width w and requires
@@ -135,4 +160,7 @@ public/             Static assets and web app manifest (Phase 3 builds on these)
     log-uniformly from 10⁻² to 10⁶ with random signs, so it covers both tiny and very large ranges. Integrals use
     composite Simpson's rule, rescaled so huge values can't overflow. Points where both functions are undefined are skipped;
     an interval where only one of them is defined fails
-- UI: a game mode that plots the hidden f(x) (or samples of it) next to the player's guesses
+
+## Tests
+
+`npm test` runs unit tests for the math, graph and game modules, plus jsdom integration tests (`src/app/App.test.tsx`). Those render the whole app and cover the pinned target row, the visibility toggle, which rows can be submitted, feedback on a miss, winning with an equivalent form, difficulty selection, hints and giving up.

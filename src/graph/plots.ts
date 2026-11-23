@@ -6,8 +6,20 @@ import type { Bounds, Size } from './viewport';
 
 /** Something the graph can draw. Built from compiled rows by the app. */
 export type GraphPlot =
-  /** y = fn(x), or the region y <op> fn(x). */
-  | { type: 'function'; id: string; color: string; fn: RealFn; inequality?: Comparison }
+  /**
+   * y = fn(x), or the region y <op> fn(x). `emphasis: 'target'` marks the
+   * game's hidden f(x): it gets a glow and a floating `label` badge, a style
+   * reserved for the target so player curves never look like it.
+   */
+  | {
+      type: 'function';
+      id: string;
+      color: string;
+      fn: RealFn;
+      inequality?: Comparison;
+      emphasis?: 'target';
+      label?: string;
+    }
   /** x = x0, or the half-plane x <op> x0. */
   | { type: 'vline'; id: string; color: string; x: number; inequality?: Comparison }
   /** F(x, y) = 0, or the region F(x, y) <op> 0. `circle` enables exact geometry. */

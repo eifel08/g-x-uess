@@ -1,5 +1,5 @@
-import type { Dispatch } from 'react';
-import type { CompiledRows } from '../math/types';
+import type { Dispatch, ReactNode } from 'react';
+import type { CompiledRows, RowResult } from '../math/types';
 import { ExpressionRow } from './ExpressionRow';
 import type { ExpressionAction, ExpressionItem } from './model';
 import type { ExpressionEditor } from './useExpressionEditor';
@@ -15,6 +15,12 @@ interface Props {
   /** Called with the focused row's id, or null when focus leaves the list. */
   onSelect?: (id: string | null) => void;
   onCollapse?: () => void;
+  /** Pinned content above the list (the game's `f(x) = ?` row). */
+  top?: ReactNode;
+  /** Returns a submit handler if this row can be submitted as a guess. */
+  submitFor?: (item: ExpressionItem, result: RowResult | undefined) => (() => void) | undefined;
+  /** Feedback to show on a row, if any. */
+  feedbackFor?: (item: ExpressionItem) => { correct: boolean; message: string } | undefined;
 }
 
 export function ExpressionPanel({
@@ -26,6 +32,9 @@ export function ExpressionPanel({
   onToggleKeypad,
   onSelect,
   onCollapse,
+  top,
+  submitFor,
+  feedbackFor,
 }: Props) {
   return (
     <aside className="panel" aria-label="Expressions">
@@ -66,6 +75,8 @@ export function ExpressionPanel({
         </div>
       </header>
 
+      {top}
+
       <ol className="panel__list">
         {items.map((item, index) => (
           <ExpressionRow
@@ -85,6 +96,8 @@ export function ExpressionPanel({
             onEnter={() => editor.addAfter(item.id)}
             onBackspaceEmpty={() => items.length > 1 && editor.remove(item.id)}
             onNavigate={(delta) => editor.focus(items[index + delta]?.id)}
+            onSubmit={submitFor?.(item, results[item.id])}
+            feedback={feedbackFor?.(item)}
           />
         ))}
       </ol>
@@ -94,7 +107,7 @@ export function ExpressionPanel({
       </button>
 
       <footer className="panel__hint">
-        Try <code>f(x) = x^3 - 2x</code>, <code>|x|</code>, <code>ln(x)</code>, <code>1/x</code>. Click a curve or a gray point to pin its coordinates. Alt+K opens the keypad.
+        Try <code>g(x) = x^3 - 2x</code>, <code>|x|</code>, <code>ln(x)</code>, <code>1/x</code>. Click a curve or a gray point to pin its coordinates. Alt+K opens the keypad.
       </footer>
     </aside>
   );

@@ -17,6 +17,10 @@ interface Props {
   onEnter: () => void;
   onBackspaceEmpty: () => void;
   onNavigate: (delta: -1 | 1) => void;
+  /** Game mode: submit this row as a guess for f(x). Set only when the row can be submitted. */
+  onSubmit?: () => void;
+  /** Game mode: result of this row's latest submission (hidden once the row is edited). */
+  feedback?: { correct: boolean; message: string };
 }
 
 /** How long typing must pause before errors appear for the focused row. */
@@ -35,6 +39,8 @@ export function ExpressionRow({
   onEnter,
   onBackspaceEmpty,
   onNavigate,
+  onSubmit,
+  feedback,
 }: Props) {
   const [focused, setFocused] = useState(false);
   const [settled, setSettled] = useState(true);
@@ -96,7 +102,7 @@ export function ExpressionRow({
           ref={inputRef}
           className="expr-row__input"
           value={item.text}
-          placeholder={index === 0 ? 'Type an expression, e.g. y = x^2' : ''}
+          placeholder={index === 0 ? 'Type a guess, e.g. g(x) = 2x + 1' : ''}
           spellCheck={false}
           autoComplete="off"
           autoCorrect="off"
@@ -120,6 +126,12 @@ export function ExpressionRow({
             {error}
           </div>
         )}
+        {feedback && (
+          <div className={`expr-row__feedback${feedback.correct ? ' is-correct' : ''}`} role="status">
+            {feedback.correct ? '✓ ' : '✗ '}
+            {feedback.message}
+          </div>
+        )}
         {value !== null && (
           <div className="expr-row__value">
             {result?.kind === 'value' && result.name ? `${result.name} = ` : '= '}
@@ -128,6 +140,17 @@ export function ExpressionRow({
         )}
       </div>
 
+      {onSubmit && (
+        <button
+          type="button"
+          className="expr-row__submit"
+          onClick={onSubmit}
+          aria-label={`Submit expression ${index + 1} as your guess for f(x)`}
+          title="Submit as your guess for f(x)"
+        >
+          Submit
+        </button>
+      )}
       <div className="expr-row__actions">
         {isCurve && (
           <div className="expr-row__color">

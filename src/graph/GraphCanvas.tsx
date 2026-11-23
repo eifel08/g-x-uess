@@ -138,7 +138,7 @@ export function GraphCanvas({
       const plot = frame.plots.find((p) => p.id === pin.curveId);
       if (plot?.type !== 'function') return null;
       const y = plot.fn(pin.x);
-      return Number.isFinite(y) ? { x: pin.x, y, color: plot.color, pinned: false } : null;
+      return Number.isFinite(y) ? { x: pin.x, y, color: plot.color, pinned: false, caption: plot.label } : null;
     }
     if (pin.kind === 'fixed') {
       const plot = frame.plots.find((p) => p.id === pin.plotId);
@@ -215,6 +215,8 @@ export function GraphCanvas({
         fills: p.fills,
         fillRule: p.fillRule,
         dashed: p.dashed,
+        glow: p.plot.type === 'function' && p.plot.emphasis === 'target',
+        badge: p.plot.type === 'function' ? p.plot.label : undefined,
       })),
       pois: shownPois(frame).filter((p) => !highlighted.has(`${p.x},${p.y}`)),
       points,
