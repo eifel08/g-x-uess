@@ -46,7 +46,14 @@ export type RowResult =
    * y = fn(x). `name` is set for `f(x) = …` definitions. With `inequality`,
    * the row is the region `y <op> fn(x)` (e.g. y < x²), bounded by the curve.
    */
-  | { kind: 'curve'; fn: RealFn; name?: string; inequality?: Comparison }
+  | {
+      kind: 'curve';
+      fn: RealFn;
+      name?: string;
+      inequality?: Comparison;
+      /** External functions (e.g. the game's hidden f) this curve depends on. */
+      usesExternal?: string[];
+    }
   /** The vertical line x = `x`, or with `inequality` the half-plane `x <op> x`. */
   | { kind: 'vline'; x: number; inequality?: Comparison }
   /**

@@ -19,6 +19,8 @@ interface Props {
   onNavigate: (delta: -1 | 1) => void;
   /** Game mode: submit this row as a guess for f(x). Set only when the row can be submitted. */
   onSubmit?: () => void;
+  /** Game mode: why this function row can't be submitted (Submit shows disabled). */
+  submitBlocked?: string;
   /** Game mode: result of this row's latest submission (hidden once the row is edited). */
   feedback?: { correct: boolean; message: string };
 }
@@ -40,6 +42,7 @@ export function ExpressionRow({
   onBackspaceEmpty,
   onNavigate,
   onSubmit,
+  submitBlocked,
   feedback,
 }: Props) {
   const [focused, setFocused] = useState(false);
@@ -140,6 +143,17 @@ export function ExpressionRow({
         )}
       </div>
 
+      {submitBlocked && !onSubmit && (
+        <button
+          type="button"
+          className="expr-row__submit"
+          disabled
+          aria-label={`Can't submit expression ${index + 1}: ${submitBlocked}`}
+          title={submitBlocked}
+        >
+          Submit
+        </button>
+      )}
       {onSubmit && (
         <button
           type="button"

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { generateTarget } from '../game';
+import { compileTarget, generateTarget } from '../game';
 import { installDomStubs } from '../test/domSetup';
 import { App } from './App';
 
@@ -76,6 +76,31 @@ describe('game mode in the app', () => {
     expect(screen.getByText(/Solved in 2 tries/)).toBeTruthy();
     expect(formula()).toBe(`f(x) = ${target.expression}`);
     expect(submitButton()).toBeNull(); // round over
+  });
+
+  it('lets expressions use the hidden f, but not submit them', () => {
+    render(<App />);
+    type('sin(f(x))');
+    expect(screen.queryByText(/is not defined|Unknown function/)).toBeNull();
+    const blocked = screen.getByRole('button', { name: /Can't submit expression 1/ });
+    expect((blocked as HTMLButtonElement).disabled).toBe(true);
+    expect(submitButton()).toBeNull();
+
+    // Values of f are fine to inspect (like hovering the curve).
+    type('f(0)');
+    const fn = compileTarget(target.expression)!;
+    const y0 = fn(0);
+    if (Number.isFinite(y0)) expect(screen.getByText(/^=/).textContent).toContain(String(Number(y0.toPrecision(12))).replace('-', '−'));
+
+    // Indirect use through another definition is also caught.
+    fireEvent.click(screen.getByRole('button', { name: 'Add expression' }));
+    fireEvent.change(screen.getByLabelText('Expression 2'), { target: { value: 'g(x) = f(x) + 0' } });
+    type('y = g(x)');
+    expect(screen.getByRole('button', { name: /Can't submit expression 1/ })).toBeTruthy();
+
+    // A user definition named f is rejected with a clear message.
+    type('f(x) = x^2');
+    expect(screen.getByText(/"f" is the hidden function/)).toBeTruthy();
   });
 
   it('picks difficulty 1–5 and generates a fresh function', () => {

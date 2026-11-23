@@ -19,6 +19,12 @@ import type { CompiledRows, Comparison, ExpressionSource, RealFn, RealFn2, RowRe
 export interface CompileOptions {
   /** Units for trigonometric functions. Default: radians. */
   angleMode?: AngleMode;
+  /**
+   * Functions of one variable provided from outside the rows, callable by
+   * name from any row (`sin(f(x))`, `f'(x)`, `g(x) = f(x) + 1`). The game uses
+   * this for the hidden target f. Rows can't redefine these names.
+   */
+  externals?: Record<string, RealFn>;
 }
 
 /* ------------------------------------------------------------------------ */
@@ -441,7 +447,8 @@ function primeFunction(primeName: string, globals: Map<string, unknown>): RealFn
  * one bad row never breaks the others.
  */
 export function compileExpressions(sources: readonly ExpressionSource[], options: CompileOptions = {}): CompiledRows {
-  const { angleMode = 'rad' } = options;
+  const { angleMode = 'rad', externals = {} } = options;
+  const externalNames = new Set(Object.keys(externals));
   const results: CompiledRows = {};
   const parsed = new Map<string, ParsedRow>();
   for (const src of sources) parsed.set(src.id, parseRow(src.text));
@@ -458,6 +465,10 @@ export function compileExpressions(sources: readonly ExpressionSource[], options
       PRIME_NAME.test(row.name);
     if (reserved) {
       parsed.set(id, { kind: 'error', message: `"${row.name}" is a reserved name` });
+      continue;
+    }
+    if (externalNames.has(row.name)) {
+      parsed.set(id, { kind: 'error', message: `"${row.name}" is the hidden function. Pick another name, e.g. g(x) = …` });
       continue;
     }
     if (row.kind === 'func') {
@@ -481,6 +492,7 @@ export function compileExpressions(sources: readonly ExpressionSource[], options
   }
 
   const defs: Definitions = { functions: new Map(), variables: new Set() };
+  for (const name of externalNames) defs.functions.set(name, 1);
   const defRows = new Map<string, { id: string; row: DefRow }>();
   for (const [name, [id]] of defOwners) {
     const row = parsed.get(id) as DefRow;
@@ -520,12 +532,15 @@ export function compileExpressions(sources: readonly ExpressionSource[], options
   // --- Global scope: angle-mode overrides, then built-in derivatives. ---
   const globals = new Map<string, unknown>();
   if (angleMode === 'deg') for (const [name, fn] of Object.entries(degreeTrig)) globals.set(name, fn);
+  for (const [name, fn] of Object.entries(externals)) globals.set(name, fn);
   for (const p of allPrimes) {
-    if (!defs.functions.has(PRIME_NAME.exec(p)![1])) globals.set(p, primeFunction(p, globals));
+    const base = PRIME_NAME.exec(p)![1];
+    if (!defs.functions.has(base) || externalNames.has(base)) globals.set(p, primeFunction(p, globals));
   }
 
   // --- Resolve definitions in dependency order, detecting cycles. ---
   const defState = new Map<string, 'ok' | 'error'>();
+  for (const name of externalNames) defState.set(name, 'ok'); // already resolved
   const stack: string[] = [];
   const failDef = (name: string, message: string) => {
     defState.set(name, 'error');
@@ -592,9 +607,27 @@ export function compileExpressions(sources: readonly ExpressionSource[], options
       results[id] = { kind: 'error', message: `Depends on "${firstBadDep}", which has an error` };
       continue;
     }
-    results[id] = finishRow(row, analysis, globals);
+    const result = finishRow(row, analysis, globals);
+    const used = externalsUsed(analysis.deps);
+    results[id] = result.kind === 'curve' && used.length > 0 ? { ...result, usesExternal: used } : result;
   }
   return results;
+
+  /** External functions a row relies on, directly or through other definitions. */
+  function externalsUsed(deps: Set<string>): string[] {
+    const found = new Set<string>();
+    const seen = new Set<string>();
+    const visit = (name: string) => {
+      if (seen.has(name)) return;
+      seen.add(name);
+      if (externalNames.has(name)) found.add(name);
+      const entry = defRows.get(name);
+      const info = entry && analysed.get(entry.id);
+      info?.analysis.deps.forEach(visit);
+    };
+    deps.forEach(visit);
+    return [...found];
+  }
 }
 
 function finishRow(row: BodyRow, analysis: Analysis, globals: Map<string, unknown>): RowResult {

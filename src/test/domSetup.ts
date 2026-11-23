@@ -20,5 +20,6 @@ export function installDomStubs() {
     removeListener() {},
     dispatchEvent: () => false,
   })) as unknown as typeof window.matchMedia;
+  Element.prototype.scrollIntoView ??= function scrollIntoView() {};
   HTMLCanvasElement.prototype.getContext = (() => null) as unknown as HTMLCanvasElement['getContext'];
 }

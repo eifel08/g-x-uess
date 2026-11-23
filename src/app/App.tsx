@@ -18,13 +18,15 @@ export function App() {
 
   // Recompile only when text or angle mode changes — not on colour/visibility toggles.
   const textKey = items.map((i) => `${i.id}\u0000${i.text}`).join('\u0001');
-  const results = useMemo(
-    () => compileExpressions(items, { angleMode }),
-    [textKey, angleMode],
-  );
-
   const game = useGame();
   const { targetFn } = game;
+
+  // The hidden target is callable as f in every row: sin(f(x)), f'(x), g(x) = f(x) - x, …
+  const results = useMemo(
+    () => compileExpressions(items, { angleMode, externals: { f: targetFn } }),
+    [textKey, angleMode, targetFn],
+  );
+
   const targetVisible = game.state.targetVisible;
 
   const plots = useMemo<GraphPlot[]>(() => {
@@ -43,10 +45,13 @@ export function App() {
   }, [items, results, targetFn, targetVisible]);
 
   // Any plain function-of-x row can be submitted as a guess while a round is on.
+  // Rows built from f itself (y = f(x), g(x) = f(x) + 0, …) would win trivially.
+  const submittable = (r: RowResult | undefined) =>
+    game.state.status === 'playing' && r?.kind === 'curve' && !r.inequality;
   const submitFor = (item: ExpressionItem, r: RowResult | undefined) =>
-    game.state.status === 'playing' && r?.kind === 'curve' && !r.inequality
-      ? () => game.submit(item.id, item.text, r.fn)
-      : undefined;
+    submittable(r) && r?.kind === 'curve' && !r.usesExternal ? () => game.submit(item.id, item.text, r.fn) : undefined;
+  const submitBlockedFor = (_item: ExpressionItem, r: RowResult | undefined) =>
+    submittable(r) && r?.kind === 'curve' && r.usesExternal ? 'A guess can’t use f itself. Write it with x only.' : undefined;
   const feedback = game.state.feedback;
   const feedbackFor = (item: ExpressionItem) =>
     feedback && feedback.rowId === item.id && feedback.text === item.text ? feedback.result : undefined;
@@ -83,6 +88,7 @@ export function App() {
           onCollapse={() => setPanelOpen(false)}
           top={<TargetRow game={game} />}
           submitFor={submitFor}
+          submitBlockedFor={submitBlockedFor}
           feedbackFor={feedbackFor}
         />
       )}

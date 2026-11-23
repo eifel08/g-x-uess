@@ -19,6 +19,8 @@ interface Props {
   top?: ReactNode;
   /** Returns a submit handler if this row can be submitted as a guess. */
   submitFor?: (item: ExpressionItem, result: RowResult | undefined) => (() => void) | undefined;
+  /** Why a function row can't be submitted, if it can't (Submit shows disabled). */
+  submitBlockedFor?: (item: ExpressionItem, result: RowResult | undefined) => string | undefined;
   /** Feedback to show on a row, if any. */
   feedbackFor?: (item: ExpressionItem) => { correct: boolean; message: string } | undefined;
 }
@@ -34,6 +36,7 @@ export function ExpressionPanel({
   onCollapse,
   top,
   submitFor,
+  submitBlockedFor,
   feedbackFor,
 }: Props) {
   return (
@@ -97,6 +100,7 @@ export function ExpressionPanel({
             onBackspaceEmpty={() => items.length > 1 && editor.remove(item.id)}
             onNavigate={(delta) => editor.focus(items[index + delta]?.id)}
             onSubmit={submitFor?.(item, results[item.id])}
+            submitBlocked={submitBlockedFor?.(item, results[item.id])}
             feedback={feedbackFor?.(item)}
           />
         ))}

@@ -341,7 +341,12 @@
   white-space: nowrap;
 }
 
-.expr-row__submit:hover {
+.expr-row__submit:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.expr-row__submit:not(:disabled):hover {
   background: color-mix(in srgb, var(--game-target) 28%, var(--surface));
 }
 

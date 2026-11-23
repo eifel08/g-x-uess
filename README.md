@@ -40,8 +40,8 @@ A hidden function is pinned at the top of the sidebar as **`f(x) = ?`**, drawn o
    3. `a·sin(bx) + c`, exponentials, logarithms, cubics
    4. rational functions with asymptotes, damped and shifted trig, multi-term polynomials, combined forms
    5. compositions (`e^(sin x)`, `ln(x^2 + a)`), products and ratios (`x sin(x)/2`, `sin(x)/x`), non-trivial phase and frequency, subtle transformations
-2. Explore with the calculator as usual. The eye button shows or hides f(x). Hovering f(x) shows coordinates, and its intercepts and intersections with your curves appear as points of interest.
-3. When a row holds a function of x (`y = …`, `g(x) = …` or a bare expression), press its **Submit** button to submit it as your guess. There's no separate guess box.
+2. Explore with the calculator as usual. **f is a real function you can use in any expression**: `sin(f(x))`, `f(x) - x^2`, `f(x + 1)`, `f'(x)`, `d/dx f(x)`, `y < f(x)`, or values like `f(0)`. The name f is reserved for it, so call your own functions g, h, …. The eye button shows or hides f(x). Hovering f(x) shows coordinates, and its intercepts and intersections with your curves appear as points of interest.
+3. When a row holds a function of x (`y = …`, `g(x) = …` or a bare expression), press its **Submit** button to submit it as your guess. There's no separate guess box. Rows that use f, directly or through another definition, can't be submitted (their Submit button is disabled), because `y = f(x)` would win trivially.
    - **Match:** you win, the formula is revealed and the number of tries is shown, with a **New function** button.
    - **Miss:** a short note on that row explains how it differs, without giving the answer away. For example: "Right shape! It's shifted right by 2", "above f(x) by 3 everywhere", "stretched vertically by a factor of 2", "upside down", domain differences, or "62% of the visible graph matches".
 4. **Hints** (light bulb) reveal, one at a time: the function family, f(0), symmetry (even/odd), then where f crosses the x-axis. **Give up** (flag) reveals f(x).
