@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
 import type { RealFn, RealFn2 } from '../math/types';
 import { compileTarget, generateTarget, randomSeed, type Difficulty, type TargetFunction } from './generator';
 import { compileTarget3D, generateTarget3D } from './generator3d';
@@ -6,6 +6,7 @@ import { hintsFor } from './hints';
 import { hintsFor3D } from './hints3d';
 import { judgeGuess, type GuessResult } from './judge';
 import { judgeGuess3D } from './judge3d';
+import { hashExpression, pickFreshSeed, remember, type RecentTargets } from './recent';
 import { gameReducer, initialGame, type GameState } from './state';
 
 /** Everything that differs between the 2D and 3D games. */
@@ -59,6 +60,20 @@ function load(storageKey: string): GameState {
   return initialGame(randomSeed());
 }
 
+function loadRecent(key: string): RecentTargets {
+  try {
+    const raw = JSON.parse(localStorage.getItem(key) ?? '{}') as RecentTargets;
+    const clean: RecentTargets = {};
+    for (const d of [1, 2, 3, 4, 5] as Difficulty[]) {
+      const list = raw?.[d];
+      if (Array.isArray(list)) clean[d] = list.filter((h) => typeof h === 'string');
+    }
+    return clean;
+  } catch {
+    return {};
+  }
+}
+
 /** The parts of a game the UI controls need (shared by 2D and 3D). */
 export interface GameControls {
   state: GameState;
@@ -83,6 +98,19 @@ export function useGameWith<Fn>(kit: GameKit<Fn>): Game<Fn> {
   const targetFn = useMemo(() => kit.compile(target.expression) ?? kit.fallback, [kit, target]);
   const hints = useMemo(() => kit.hints(target, targetFn), [kit, target, targetFn]);
 
+  // Recently played targets per difficulty (as hashes), so new rounds don't repeat them.
+  const recentKey = `${kit.storageKey}.recent`;
+  const recent = useRef<RecentTargets>(loadRecent(recentKey));
+  useEffect(() => {
+    const d = target.difficulty;
+    recent.current = { ...recent.current, [d]: remember(recent.current[d] ?? [], hashExpression(target.expression)) };
+    try {
+      localStorage.setItem(recentKey, JSON.stringify(recent.current));
+    } catch {
+      // best-effort persistence
+    }
+  }, [recentKey, target]);
+
   useEffect(() => {
     try {
       const { feedback: _omit, ...persisted } = state;
@@ -92,7 +120,15 @@ export function useGameWith<Fn>(kit: GameKit<Fn>): Game<Fn> {
     }
   }, [kit, state]);
 
-  const newFunction = useCallback((difficulty?: Difficulty) => dispatch({ type: 'new', seed: randomSeed(), difficulty }), []);
+  const currentDifficulty = state.difficulty;
+  const newFunction = useCallback(
+    (difficulty?: Difficulty) => {
+      const d = difficulty ?? currentDifficulty;
+      const seed = pickFreshSeed((s) => kit.generate(d, s), recent.current[d] ?? [], randomSeed);
+      dispatch({ type: 'new', seed, difficulty: d });
+    },
+    [kit, currentDifficulty],
+  );
   const submit = useCallback(
     (rowId: string, text: string, guess: Fn) =>
       dispatch({ type: 'submitted', rowId, text, result: kit.judge(targetFn, guess) }),

@@ -14,6 +14,7 @@ export { compileTarget, DIFFICULTIES, generateTarget, isGoodTarget, type Difficu
 export { hintsFor } from './hints';
 export { judgeGuess, type GuessResult } from './judge';
 export { gameReducer, initialGame, type GameState, type GameStatus } from './state';
+export { hashExpression, pickFreshSeed, RECENT_LIMIT, remember, type RecentTargets } from './recent';
 export { TARGET_COLOR, TARGET_PLOT_ID } from './style';
 export { TargetRow } from './TargetRow';
 export { GAME_2D, GAME_3D, useGame, useGame3D, useGameWith, type Game, type GameControls, type GameKit } from './useGame';

@@ -1,6 +1,5 @@
 import { compileExpressions } from '../math/compile';
 import type { RealFn } from '../math/types';
-import { mulberry32 } from './random';
 
 export type Difficulty = 1 | 2 | 3 | 4 | 5;
 export const DIFFICULTIES: readonly Difficulty[] = [1, 2, 3, 4, 5];
@@ -15,172 +14,200 @@ export interface TargetFunction {
 }
 
 import { coef, inner, num, plus, plusTerm, poly, shifted } from './format';
+import { makeGen, signed, type Gen } from './gen';
+
+/* ------------------------------------------------------------------------ */
+/* Parameter pools                                                           */
+/* ------------------------------------------------------------------------ */
+
+/** Slopes / scales: integers plus friendly decimals. */
+const SLOPES = signed([1, 2, 3, 4, 5, 0.5, 1.5, 2.5, 0.25, 0.75]);
+const SCALES = signed([0.25, 0.5, 1, 1.5, 2, 3]);
+const SMALL_SCALES = signed([0.5, 1, 1.5, 2, 3]);
+const FREQS = [0.25, 0.5, 1, 1.5, 2, 2.5, 3];
+const PHASE_FREQS = [0.6, 0.75, 1.25, 1.5, 1.75, 2.5, 3.5];
+const PHASES = ['π/2', 'π/3', 'π/4', 'π/6', '2π/3', '0.5', '1', '2'];
 
 /* ------------------------------------------------------------------------ */
 /* Templates                                                                 */
 /* ------------------------------------------------------------------------ */
 
-interface Gen {
-  int(lo: number, hi: number, opts?: { nonZero?: boolean }): number;
-  pick<T>(items: readonly T[]): T;
-}
-
 type Template = (g: Gen) => { expression: string; family: string };
 
 const TEMPLATES: Record<Difficulty, Template[]> = {
   1: [
+    (g) => ({ expression: `${coef(g.pick(SLOPES), 'x')}${plus(g.half(-8, 8))}`, family: 'linear' }),
+    (g) => ({ expression: `${g.pick(['', '-'])}x/${g.pick([3, 5, 6])}${plus(g.half(-5, 5))}`, family: 'linear' }),
     (g) => ({
-      expression: `${coef(g.pick([1, 2, 3, -1, -2, -3, 0.5, -0.5]), 'x')}${plus(g.int(-5, 5))}`,
-      family: 'linear',
+      expression: `${coef(g.pick(signed([0.25, 0.5, 0.75, 1, 1.5, 2, 3])), 'x^2')}${plus(g.half(-6, 6, { nonZero: true }))}`,
+      family: 'quadratic',
     }),
-    (g) => ({ expression: `${g.pick(['', '-'])}x^2${plus(g.int(-5, 5, { nonZero: true }))}`, family: 'quadratic' }),
-    (g) => ({ expression: `${shifted(g.int(-4, 4, { nonZero: true }))}^2${plus(g.int(-3, 3))}`, family: 'quadratic' }),
+    (g) => ({
+      expression: `${g.pick(['', '-'])}${shifted(g.half(-6, 6, { nonZero: true }))}^2${plus(g.half(-8, 8))}`,
+      family: 'quadratic',
+    }),
   ],
   2: [
     (g) => {
-      const h = g.int(-4, 4);
-      const k = h === 0 ? g.int(-4, 4, { nonZero: true }) : g.int(-4, 4);
-      return { expression: `${coef(g.pick([-2, -1, -0.5, 0.5, 1, 2]), `${shifted(h)}^2`)}${plus(k)}`, family: 'quadratic' };
+      const h = g.half(-5, 5);
+      const k = h === 0 ? g.half(-5, 5, { nonZero: true }) : g.half(-5, 5);
+      return { expression: `${coef(g.pick(SCALES), `${shifted(h)}^2`)}${plus(k)}`, family: 'quadratic' };
     },
     (g) => {
-      const r1 = g.int(-5, 4);
-      const r2 = g.int(r1 + 1, 5);
-      return { expression: coef(g.pick([-1, 1, 0.5, -0.5]), `${shifted(r1)}${shifted(r2)}`), family: 'quadratic' };
+      const [r1, r2] = g.pair([-6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6]);
+      return {
+        expression: `${coef(g.pick(signed([0.25, 0.5, 1, 2])), `${shifted(r1)}${shifted(r2)}`)}${plus(g.int(-2, 2))}`,
+        family: 'quadratic',
+      };
     },
     (g) => ({
-      expression: `${coef(g.pick([-2, -1, 1, 2, 0.5]), `|${inner(g.int(-4, 4))}|`)}${plus(g.int(-3, 3))}`,
+      expression: `${coef(g.pick(SMALL_SCALES), `|${inner(g.half(-5, 5))}|`)}${plus(g.half(-5, 5))}`,
       family: 'absolute value',
     }),
+    (g) => {
+      const h = g.int(-6, 6);
+      // Square roots opening right, √(x − h), or left, √(h − x).
+      const inside = g.pick([inner(h), h === 0 ? '-x' : `${num(h)} - x`]);
+      return { expression: `${coef(g.pick(SMALL_SCALES), `sqrt(${inside})`)}${plus(g.half(-4, 4))}`, family: 'square root' };
+    },
     (g) => ({
-      expression: `${coef(g.pick([1, 2, -1, -2]), `sqrt(${inner(g.int(-5, 3))})`)}${plus(g.int(-3, 3))}`,
-      family: 'square root',
-    }),
-    (g) => ({
-      expression: `${g.pick([1, 2, 3, -1, -2])}/${shifted(g.int(-3, 3))}${plus(g.int(-2, 2))}`,
+      expression: `${g.pick(signed([1, 2, 3, 4, 0.5]))}/${shifted(g.half(-4, 4))}${plus(g.half(-3, 3))}`,
       family: 'reciprocal',
     }),
   ],
   3: [
     (g) => {
       const fn = g.pick(['sin', 'cos']);
-      const inside = coef(g.pick([1, 2, 0.5, 3]), 'x');
       return {
-        expression: `${coef(g.pick([1, 2, 3, -1, -2]), `${fn}(${inside})`)}${plus(g.int(-2, 2))}`,
+        expression: `${coef(g.pick(signed([0.5, 1, 1.5, 2, 2.5, 3])), `${fn}(${coef(g.pick(FREQS), 'x')})`)}${plus(g.half(-3, 3))}`,
         family: 'trigonometric',
       };
     },
     (g) => {
-      const k = g.int(-3, 3);
+      const k = g.half(-4, 4);
       const forms = [
-        () => `e^(${inner(g.int(-3, 3, { nonZero: true }))})${plus(k)}`,
-        () => `${coef(g.pick([-1, 2, 0.5]), 'e^x')}${plus(k)}`,
-        () => `2^x${plus(k)}`,
-        () => `e^(-x)${plus(k)}`,
+        () => `${coef(g.pick(signed([0.5, 1, 2, 3])), `e^(${coef(g.pick(signed([0.25, 0.5, 1, 1.5])), 'x')})`)}${plus(k)}`,
+        () => `e^(${inner(g.half(-3, 3, { nonZero: true }))})${plus(k)}`,
+        () => `${coef(g.pick([1, -1, 2, 0.5]), `${g.pick(['2', '3', '0.5'])}^x`)}${plus(k)}`,
       ];
       return { expression: g.pick(forms)(), family: 'exponential' };
     },
     (g) => {
-      const forms = [
-        () => `ln(${inner(-g.int(-3, 4, { nonZero: true }))})${plus(g.int(-2, 2))}`,
-        () => `${coef(g.pick([2, -1, 3, -2]), 'ln(x)')}${plus(g.int(-2, 2))}`,
-      ];
-      return { expression: g.pick(forms)(), family: 'logarithmic' };
+      const fn = g.pick(['ln', 'ln', 'log']);
+      return {
+        expression: `${coef(g.pick(signed([0.5, 1, 1.5, 2, 3])), `${fn}(${inner(g.int(-6, 6))})`)}${plus(g.half(-3, 3))}`,
+        family: 'logarithmic',
+      };
     },
     (g) => {
       const forms = [
-        () => `x^3 - ${g.int(1, 9)}x`,
-        () => `${shifted(g.int(-2, 2, { nonZero: true }))}^3${plus(g.int(-3, 3))}`,
-        () => `x^3/${g.pick([2, 4, 5])} - ${coef(g.int(1, 3), 'x')}`,
+        () => {
+          const b = g.int(0, 6);
+          return `${coef(g.pick(signed([0.05, 0.1, 0.125, 0.2, 0.25, 0.5])), 'x^3')}${b ? plusTerm(-b, 'x') : ''}${plus(g.half(-3, 3))}`;
+        },
+        () => `${coef(g.pick(signed([0.1, 0.25, 0.5, 1])), `${shifted(g.half(-3, 3))}^3`)}${plus(g.half(-3, 3))}`,
       ];
       return { expression: g.pick(forms)(), family: 'cubic' };
     },
   ],
   4: [
     (g) => {
-      const a = g.pick([1, 2, -1, 3]);
-      const c = g.int(-3, 3, { nonZero: true });
-      let b = g.int(-4, 4);
+      const a = g.pick([1, 2, 3, -1, -2, 0.5]);
+      const c = g.half(-4, 4, { nonZero: true });
+      let b = g.half(-5, 5);
       if (a * c + b === 0) b += 1; // (ax + b)/(x − c) must not cancel
-      return { expression: `(${coef(a, 'x')}${plus(b)})/${shifted(c)}`, family: 'rational' };
+      return { expression: `(${coef(a, 'x')}${plus(b)})/${shifted(c)}${plus(g.int(-2, 2))}`, family: 'rational' };
     },
     (g) => {
-      const p = g.int(-4, 3);
-      const q = g.int(p + 1, 4);
-      return { expression: `${g.pick([1, 2, 4, -2])}/(${shifted(p)}${shifted(q)})`, family: 'rational' };
+      const [p, q] = g.pair([-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5]);
+      return {
+        expression: `${g.pick(signed([1, 2, 4, 6]))}/(${shifted(p)}${shifted(q)})${plus(g.half(-2, 2))}`,
+        family: 'rational',
+      };
     },
-    (g) => ({ expression: `${coef(g.pick([2, 4, 6, -4]), 'x')}/(x^2 + ${g.int(1, 4)})`, family: 'rational' }),
-    (g) => ({
-      expression: coef(g.pick([1, 3, 4, -3]), `e^(-x/${g.pick([3, 4, 5])})sin(${coef(g.pick([1, 2, 3]), 'x')})`),
-      family: 'damped trigonometric',
-    }),
+    (g) => {
+      const top = g.pick([() => coef(g.pick(signed([2, 3, 4, 6])), 'x'), () => String(g.pick(signed([2, 4, 6, 8])))])();
+      return { expression: `${top}/(x^2 + ${g.int(1, 9)})${plus(g.half(-2, 2))}`, family: 'rational' };
+    },
+    (g) => {
+      const forms = [
+        () => coef(g.pick(signed([1, 2, 3, 4])), `e^(-x/${g.pick([2, 3, 4, 5, 6])})${g.pick(['sin', 'cos'])}(${coef(g.pick(FREQS.slice(1)), 'x')})`),
+        () => coef(g.pick(signed([2, 3, 4])), `e^(-x^2/${g.pick([4, 8, 16, 25])})${g.pick(['sin', 'cos'])}(${coef(g.pick(FREQS.slice(1)), 'x')})`),
+      ];
+      return { expression: g.pick(forms)(), family: 'damped trigonometric' };
+    },
     (g) => {
       const fn = g.pick(['sin', 'cos']);
-      const b = g.pick([2, 0.5, 3]);
-      const inside = coef(b, shifted(g.int(-3, 3, { nonZero: true })));
+      const inside = coef(g.pick([0.5, 1.5, 2, 3]), shifted(g.half(-3, 3, { nonZero: true })));
       return {
-        expression: `${coef(g.pick([1, 2, 3, -2]), `${fn}(${inside})`)}${plus(g.int(-2, 2))}`,
+        expression: `${coef(g.pick(signed([1, 1.5, 2, 3])), `${fn}(${inside})`)}${plus(g.half(-2, 2))}`,
         family: 'trigonometric',
       };
     },
     (g) => {
-      // Expanded cubic/quartic built from small integer roots, scaled to fit the view.
+      // Expanded cubic/quartic built from small roots, scaled to fit the view.
       const count = g.pick([3, 4]);
+      // Whole-number roots keep the expanded coefficients short and exact.
       const roots = Array.from({ length: count }, () => g.int(-4, 4));
       let coeffs = [1];
       for (const r of roots) coeffs = [...coeffs, 0].map((c, i) => c - r * (i > 0 ? coeffs[i - 1] : 0));
-      const scale = count === 3 ? g.pick([0.25, 0.5]) : g.pick([0.05, 0.1]);
+      const scale = g.pick(count === 3 ? signed([0.1, 0.2, 0.25, 0.5]) : signed([0.02, 0.05, 0.1]));
       return { expression: poly(coeffs.map((c) => Number((c * scale).toFixed(4)))), family: 'polynomial' };
     },
     (g) => {
-      const forms = [() => `|x^2 - ${g.int(1, 9)}|`, () => `x^2/${g.pick([2, 4])}${plusTerm(g.pick([2, 3, -2]), 'sin(x)')}`];
+      const forms = [
+        () => `|x^2 - ${g.int(1, 16)}|${plus(-g.int(0, 4))}`,
+        () => `x^2/${g.pick([2, 4, 6, 8])}${plusTerm(g.pick(signed([1, 2, 3])), `sin(${coef(g.pick([1, 2, 3]), 'x')})`)}`,
+        () => `|${coef(g.pick([1, 2]), 'x')}${plus(g.int(-3, 3))}|${plusTerm(g.pick(signed([0.5, 1])), 'x')}${plus(g.int(-3, 3))}`,
+      ];
       return { expression: g.pick(forms)(), family: 'combined' };
     },
   ],
   5: [
     (g) => {
+      const c = g.half(-2, 2);
       const forms = [
-        () => `${coef(g.pick([2, 3]), `sin(x^2/${g.pick([4, 8])})`)}`,
-        () => `e^(sin(${coef(g.pick([1, 2]), 'x')}))`,
-        () => `ln(x^2 + ${g.int(1, 4)})${plus(-g.int(0, 2))}`,
-        () => `${coef(g.pick([1, 2]), `sqrt(|${inner(g.int(-3, 3))}|)`)}${plus(-g.int(0, 3))}`,
-        () => `cos(sqrt(|x|)${plus(g.int(1, 2))})`,
+        () => `${coef(g.pick(signed([1, 2, 3])), `sin(x^2/${g.pick([2, 4, 6, 8, 10])})`)}${plus(c)}`,
+        () => `${coef(g.pick([1, 2, -1]), `e^(sin(${coef(g.pick([0.5, 1, 1.5, 2]), 'x')}))`)}${plus(c)}`,
+        () => `${coef(g.pick([1, 2, -1]), `ln(x^2 + ${g.int(1, 9)})`)}${plus(c)}`,
+        () => `${coef(g.pick(signed([1, 1.5, 2])), `sqrt(|${inner(g.half(-4, 4))}|)`)}${plus(c)}`,
+        () => `${coef(g.pick(signed([1, 2, 3])), `cos(sqrt(|x|)${plus(g.half(-2, 2))})`)}${plus(c)}`,
+        () => `${coef(g.pick(signed([1, 2])), `sin(x + ${coef(g.pick([0.5, 1, 2]), `sin(${coef(g.pick([1, 2]), 'x')})`)})`)}${plus(c)}`,
       ];
       return { expression: g.pick(forms)(), family: 'composition' };
     },
     (g) => {
       const forms = [
-        () => `x sin(x)/${g.pick([2, 3, 4])}`,
-        () => coef(g.pick([2, 3, 4]), `x e^(-x^2/${g.pick([4, 8])})`),
-        () => `x cos(${g.pick([2, 3])}x)/${g.pick([2, 4])}`,
-        () => `x^2 e^(-x)/${g.pick([2, 4])}`,
+        () => `x ${g.pick(['sin', 'cos'])}(${coef(g.pick([0.5, 1, 1.5, 2, 3]), 'x')})/${g.pick([2, 3, 4, 5])}`,
+        () => coef(g.pick(signed([2, 3, 4, 5])), `x e^(-x^2/${g.pick([2, 4, 8, 16])})`),
+        () => `${coef(g.pick([1, -1]), `x^2 e^(${g.pick(['-x', '-x/2', 'x', 'x/2'])})`)}/${g.pick([2, 4, 6])}`,
+        () => coef(g.pick(signed([0.25, 0.5])), `x^2 ${g.pick(['sin', 'cos'])}(${coef(g.pick([1, 2]), 'x')})`),
       ];
       return { expression: g.pick(forms)(), family: 'product' };
     },
     (g) => {
-      const a = g.int(1, 4);
+      const a = g.int(1, 9);
       const forms = [
-        () => `${g.pick([3, 4, 5])}sin(x)/x`,
-        () => `${g.pick([3, 4])}ln(x)/x`,
-        () => `(x^2 - ${a})/(x^2 + ${a})`,
-        () => `${coef(g.pick([3, 4]), 'x')}/(1 + |x|)`,
+        () => `${g.pick(signed([2, 3, 4, 5]))}sin(${coef(g.pick([0.5, 1, 1.5, 2]), 'x')})/x`,
+        () => `${g.pick(signed([2, 3, 4]))}ln(${g.pick(['x', '|x|'])})/x`,
+        () => `${g.pick([1, 2, 3, -2])}(x^2 - ${a})/(x^2 + ${g.int(1, 9)})`,
+        () => `${coef(g.pick(signed([2, 3, 4, 5])), 'x')}/(${g.int(1, 4)} + |x|)`,
       ];
       return { expression: g.pick(forms)(), family: 'ratio' };
     },
     (g) => {
       const fn = g.pick(['sin', 'cos']);
-      const b = g.pick([1.5, 0.75, 2.5, 1.25]);
-      const phase = g.pick(['π/3', 'π/4', 'π/6', '1', '2']);
       return {
-        expression: `${coef(g.pick([2, 3, -2]), `${fn}(${num(b)}x + ${phase})`)}${plus(g.int(-1, 1))}`,
+        expression: `${coef(g.pick(signed([1, 1.5, 2, 3])), `${fn}(${num(g.pick(PHASE_FREQS))}x + ${g.pick(PHASES)})`)}${plus(g.half(-2, 2))}`,
         family: 'trigonometric',
       };
     },
     (g) => {
       const forms = [
-        () => coef(g.pick([2, 3, 4]), '|sin(x)|'),
-        () => `${g.pick([2, 4, 6])}sin(x)cos(x)`,
-        () => `sqrt(x^2 + ${g.pick([4, 9])}) - ${g.int(1, 3)}`,
-        () => `ln(e^x + 1)${plus(-g.int(1, 3))}`,
+        () => `${coef(g.pick([1, 2, 3, 4, -2]), `|sin(${coef(g.pick([0.5, 1, 1.5, 2]), 'x')})|`)}${plus(g.half(-2, 1))}`,
+        () => `${g.pick(signed([2, 3, 4, 6]))}sin(x)cos(${coef(g.pick([1, 2, 3]), 'x')})`,
+        () => `sqrt(x^2 + ${g.int(1, 16)})${plus(-g.half(0, 4))}`,
+        () => `${coef(g.pick([1, 2, -1]), `ln(e^x + ${g.int(1, 5)})`)}${plus(-g.half(0, 3))}`,
       ];
       return { expression: g.pick(forms)(), family: 'subtle transformation' };
     },
@@ -202,26 +229,34 @@ const VIEW = { xMin: -10, xMax: 10, yMin: -6, yMax: 6 };
 
 /**
  * A target is good if it compiles to a function of x and is clearly visible
- * in the default view: defined and on-screen over a decent part of it, and
- * not (nearly) flat there.
+ * in the default view. "Visible" is measured as the length of curve drawn
+ * inside the view (in view units, 20 × 12), not the share of the x-range it
+ * covers, so steep lines like 3x that cross the whole screen count, while
+ * curves that are off-screen, barely clip a corner, or are (nearly) flat
+ * don't.
  */
 export function isGoodTarget(expression: string): boolean {
   const fn = compileTarget(expression);
   if (!fn) return false;
-  const n = 400;
-  let visible = 0;
+  const n = 600;
+  const dx = (VIEW.xMax - VIEW.xMin) / n;
+  const inView = (y: number) => Number.isFinite(y) && y >= VIEW.yMin && y <= VIEW.yMax;
+  let length = 0;
+  let samples = 0;
   let lo = Infinity;
   let hi = -Infinity;
+  let prev = NaN;
   for (let i = 0; i <= n; i++) {
-    const x = VIEW.xMin + ((VIEW.xMax - VIEW.xMin) * i) / n + 1e-3; // nudge off exact integers
-    const y = fn(x);
-    if (Number.isFinite(y) && y >= VIEW.yMin && y <= VIEW.yMax) {
-      visible++;
+    const y = fn(VIEW.xMin + i * dx + 1e-3); // nudge off exact integers
+    if (inView(y)) {
+      samples++;
       lo = Math.min(lo, y);
       hi = Math.max(hi, y);
+      if (inView(prev) && Math.abs(y - prev) < VIEW.yMax - VIEW.yMin) length += Math.hypot(dx, y - prev);
     }
+    prev = y;
   }
-  return visible / (n + 1) >= 0.3 && hi - lo >= 1;
+  return length >= 6 && samples >= 8 && hi - lo >= 1;
 }
 
 /**
@@ -230,16 +265,7 @@ export function isGoodTarget(expression: string): boolean {
  * the formula. Candidates that fail `isGoodTarget` are redrawn.
  */
 export function generateTarget(difficulty: Difficulty, seed: number): TargetFunction {
-  const rng = mulberry32(seed);
-  const gen: Gen = {
-    int(lo, hi, opts) {
-      for (;;) {
-        const v = lo + Math.floor(rng() * (hi - lo + 1));
-        if (!opts?.nonZero || v !== 0) return v;
-      }
-    },
-    pick: (items) => items[Math.floor(rng() * items.length)],
-  };
+  const gen = makeGen(seed);
   const templates = TEMPLATES[difficulty];
   for (let attempt = 0; attempt < 200; attempt++) {
     const { expression, family } = gen.pick(templates)(gen);

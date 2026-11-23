@@ -48,7 +48,7 @@ describe('generateTarget', () => {
         expect(expression).not.toMatch(/(^|[^\d.])0(x|\()|[+-] 0(?![.\d])|(^|[^\d.])1x|\+ -|- -/);
         const f = compileTarget(expression)!;
         // Not constant: differs somewhere across the view.
-        const ys = [-7.3, -2.1, 0.7, 3.9, 8.2].map(f).filter(Number.isFinite);
+        const ys = Array.from({ length: 41 }, (_, i) => f(-9.97 + i * 0.5)).filter(Number.isFinite);
         expect(new Set(ys.map((y) => y.toFixed(6))).size, expression).toBeGreaterThan(1);
       }
     }

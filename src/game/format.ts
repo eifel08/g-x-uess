@@ -19,10 +19,10 @@ export const plus = (k: number) => (k > 0 ? ` + ${num(k)}` : k < 0 ? ` - ${num(-
 export const plusTerm = (a: number, term: string) => (a < 0 ? ` - ${coef(-a, term)}` : ` + ${coef(a, term)}`);
 
 /** "x − h" without parentheses, for use inside a function call. */
-export const inner = (h: number) => (h === 0 ? 'x' : h > 0 ? `x - ${num(h)}` : `x + ${num(-h)}`);
+export const inner = (h: number, v = 'x') => (h === 0 ? v : h > 0 ? `${v} - ${num(h)}` : `${v} + ${num(-h)}`);
 
 /** "(x − h)" or plain "x", for powers and products. */
-export const shifted = (h: number) => (h === 0 ? 'x' : `(${inner(h)})`);
+export const shifted = (h: number, v = 'x') => (h === 0 ? v : `(${inner(h, v)})`);
 
 /** Polynomial from coefficients, highest degree first: [1, -3, 0, 2] → "x^3 - 3x^2 + 2". */
 export function poly(coeffs: number[]): string {
