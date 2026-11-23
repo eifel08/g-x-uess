@@ -1,0 +1,74 @@
+.app {
+  display: grid;
+  grid-template-columns: minmax(300px, 360px) 1fr;
+  height: 100%;
+}
+
+.app.is-collapsed {
+  grid-template-columns: 1fr;
+}
+
+.app__graph {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+}
+
+.app__expand {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 36px;
+  padding: 0 12px 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.app__expand svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Phones: graph on top, expressions below as a sheet. */
+@media (max-width: 720px) {
+  .app {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr minmax(0, 42%);
+  }
+  .app.is-collapsed {
+    grid-template-rows: 1fr;
+  }
+  .app > .panel {
+    order: 2;
+    border-right: none;
+    border-top: 1px solid var(--border);
+  }
+  .app > .panel .panel__hint {
+    display: none;
+  }
+  .app__expand {
+    top: auto;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+  }
+  .app > .panel .panel__tools svg path[d^='M12.5'] {
+    transform: rotate(-90deg);
+    transform-origin: center;
+  }
+  .app__expand svg {
+    transform: rotate(-90deg);
+  }
+}
