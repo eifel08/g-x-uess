@@ -250,3 +250,19 @@ export function generateTarget(difficulty: Difficulty, seed: number): TargetFunc
 
 /** A fresh random seed. */
 export const randomSeed = () => Math.floor(Math.random() * 2 ** 31);
+
+/**
+ * A random seed whose target isn't one of `avoid` (expressions seen recently).
+ * Small pools can't always dodge every recent target, so after `tries` draws
+ * the last one is taken anyway.
+ */
+export function freshSeed(
+  expressionFor: (seed: number) => string,
+  avoid: ReadonlySet<string>,
+  draw: () => number = randomSeed,
+  tries = 50,
+): number {
+  let seed = draw();
+  for (let i = 1; i < tries && avoid.has(expressionFor(seed)); i++) seed = draw();
+  return seed;
+}
