@@ -10,10 +10,18 @@ export {
   type IntegralEquivalenceResult,
   type Interval,
 } from './integralEquivalence';
-export { compileTarget, DIFFICULTIES, generateTarget, isGoodTarget, type Difficulty, type TargetFunction } from './generator';
+export {
+  compileTarget,
+  DIFFICULTIES,
+  freshSeed,
+  generateTarget,
+  isGoodTarget,
+  type Difficulty,
+  type TargetFunction,
+} from './generator';
 export { hintsFor } from './hints';
 export { judgeGuess, type GuessResult } from './judge';
-export { gameReducer, initialGame, type GameState, type GameStatus } from './state';
+export { gameReducer, initialGame, RECENT_LIMIT, type GameState, type GameStatus } from './state';
 export { TARGET_COLOR, TARGET_PLOT_ID } from './style';
 export { TargetRow } from './TargetRow';
 export { GAME_2D, GAME_3D, useGame, useGame3D, useGameWith, type Game, type GameControls, type GameKit } from './useGame';
