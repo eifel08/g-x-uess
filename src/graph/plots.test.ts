@@ -157,10 +157,17 @@ describe('generic implicit curves', () => {
     }
   });
 
-  it('is fast enough for interactive use', () => {
-    const F = (x: number, y: number) => Math.sin(x * y) - 0.5;
-    const t0 = performance.now();
-    for (let i = 0; i < 10; i++) traceImplicit(F, bounds, size, { region: (v) => v > 0 });
-    expect((performance.now() - t0) / 10).toBeLessThan(40);
+  // Cost is measured in evaluations of F, not wall-clock time, so the test
+  // is deterministic across machines (CI runners are slower than desktops).
+  it('stays cheap: few evaluations for typical curves, hard cap for dense ones', () => {
+    let n = 0;
+    const ellipse = (x: number, y: number) => (n++, (x * x) / 16 + y * y - 1);
+    traceImplicit(ellipse, bounds, size, { region: (v) => v < 0 });
+    expect(n).toBeLessThan(15_000);
+
+    n = 0;
+    const dense = (x: number, y: number) => (n++, Math.sin(x * y) - 0.5);
+    traceImplicit(dense, bounds, size, { region: (v) => v > 0, maxEvals: 80_000 });
+    expect(n).toBeLessThan(80_000 + 200); // budget respected (one leaf cell of slack)
   });
 });
