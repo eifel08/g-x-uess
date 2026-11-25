@@ -1,0 +1,50 @@
+import groovy.json.JsonSlurper
+
+plugins {
+    id 'com.android.application'
+}
+
+// The app ships the web build from ../dist (run `npm run build` first).
+def webBuild = file("$rootDir/../dist")
+def appVersion = new JsonSlurper().parse(file("$rootDir/../package.json")).version
+
+android {
+    namespace 'io.github.eifel08.gxuess'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'io.github.eifel08.gxuess'
+        minSdk 27
+        targetSdk 36
+        versionCode 1
+        versionName appVersion
+    }
+
+    sourceSets {
+        main {
+            assets.srcDirs = [webBuild]
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            // Signed with the debug key so the APK installs as-is; use a real
+            // keystore before publishing to an app store.
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+tasks.named('preBuild') {
+    doFirst {
+        if (!new File(webBuild, 'index.html').exists()) {
+            throw new GradleException("No web build in ${webBuild}. Run 'npm run build' in the repository root first.")
+        }
+    }
+}
