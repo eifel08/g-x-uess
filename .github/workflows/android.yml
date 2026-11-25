@@ -1,0 +1,32 @@
+name: Android APK and single-file HTML
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - run: npm ci
+      - run: npm run build:single
+      - run: npm run build
+      - run: ./gradlew assembleRelease
+        working-directory: android
+      - run: |
+          mkdir out
+          cp android/app/build/outputs/apk/release/app-release.apk out/gxuess.apk
+          cp dist-single/gxuess.html out/gxuess.html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gxuess-app
+          path: out/

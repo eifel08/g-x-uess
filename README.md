@@ -8,8 +8,8 @@ The game is being built in phases:
 | --- | --- | --- |
 | **1** | Project foundation and a 2D graphing calculator in the style of Desmos | ✅ current |
 | 2 | Guessing-game mechanics: hidden function, guesses, hints, scoring | ✅ game mode (see below) |
-| 3 | Installable PWA (offline, home-screen install) | planned |
-| 4 | Android APK (Capacitor wrapper around the same web build) | planned |
+| 3 | Installable PWA (offline, home-screen install) and a standalone single-file HTML | ✅ |
+| 4 | Android APK (a native WebView wrapper around the same web build) | ✅ |
 
 ## Quick start
 
@@ -20,6 +20,7 @@ npm test           # unit tests (Vitest)
 npm run typecheck  # TypeScript checks
 npm run build      # production build in dist/
 npm run preview    # serve the production build
+npm run build:single  # one self-contained file: dist-single/gxuess.html
 ```
 
 Requires Node 20 or newer (CI uses Node 22).
@@ -29,6 +30,40 @@ Requires Node 20 or newer (CI uses Node 22).
 Every push to `main` runs `.github/workflows/deploy.yml`, which tests and builds the app and publishes `dist/` to
 GitHub Pages. One-time setup: in the repository's **Settings → Pages**, set **Source** to **GitHub Actions**.
 The site is then served at `https://<owner>.github.io/<repo>/`.
+
+### Installable PWA
+
+The production build is an installable, offline-capable web app. `public/manifest.webmanifest` lists the PNG and
+maskable icons. `vite.config.ts` emits `sw.js`, a service worker that precaches every file of the build. Pages are
+network-first and assets are cache-first. Each build gets its own cache name, so the old cache is deleted when an
+update activates. The worker is registered by `src/pwa.ts` on https (and localhost), not in dev, not in the
+single-file build and not inside the Android app. On a phone, open the site and choose **Install app** or **Add to
+Home screen**.
+
+### Single-file HTML
+
+`npm run build:single` builds with code splitting turned off (`--mode single`). `scripts/single-file.mjs` then inlines
+the JS, CSS and icons into `dist-single/gxuess.html`. That one file runs offline, opened straight from disk, and can
+be shared as is.
+
+### Android app (APK)
+
+`android/` is a small native project with no dependencies beyond the Android Gradle Plugin. It shows the web build in a
+full-screen WebView. The files in `dist/` are bundled as APK assets and served from
+`https://appassets.androidplatform.net/`, which never touches the network. Modules, the lazy 3D chunk and
+`localStorage` behave as they do on the web. Links to other sites open in the browser, and Back steps through the
+page's history (with predictive back on Android 13+).
+
+```bash
+npm run build                                  # the APK bundles dist/
+cd android && ./gradlew assembleRelease        # Windows: gradlew.bat assembleRelease
+# -> android/app/build/outputs/apk/release/app-release.apk
+```
+
+This needs JDK 17+ and the Android SDK (platform 36), via `ANDROID_HOME` or `android/local.properties`. The
+release APK is signed with the debug key so it installs directly. Use your own keystore before publishing to a store.
+`.github/workflows/android.yml` builds the APK and the single-file HTML on every push to `main` and attaches both
+as a workflow artifact.
 
 ## How to play
 
@@ -164,7 +199,9 @@ src/
 │   ├── TargetRow.tsx     The pinned `f(x) = ?` row (eye toggle, difficulty, hints, result)
 │   └── equivalence.ts, integralEquivalence.ts, random.ts   Function comparison and seeded RNG
 └── styles/         Global design tokens (CSS variables, light and dark)
-public/             Static assets and web app manifest (Phase 3 builds on these)
+public/             Static assets, web app manifest and app icons
+scripts/            single-file.mjs: inlines the single-file build into one HTML file
+android/            Native Android WebView wrapper (Gradle project)
 .github/workflows/  CI (typecheck, test, build) and GitHub Pages deploy from main
 ```
 
